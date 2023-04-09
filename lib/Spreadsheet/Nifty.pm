@@ -6,7 +6,8 @@ package Spreadsheet::Nifty;
 
 my $readers =
 [
-  {ext => qr#[.]xls$#i, class => 'Spreadsheet::Nifty::XLS::FileReader'},
+  {ext => qr#[.]xls$#i,  class => 'Spreadsheet::Nifty::XLS::FileReader'},
+  {ext => qr#[.]xlsb$#i, class => 'Spreadsheet::Nifty::XLSB::FileReader'},
 ];
 
 # === Class methods ===
