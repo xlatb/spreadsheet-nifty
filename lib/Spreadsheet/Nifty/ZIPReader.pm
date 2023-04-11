@@ -133,6 +133,7 @@ sub seek($;$)
   ($status != AZ_OK) && return 0;
 
   $self->{zipStreamDone} = 0;
+  $self->{buffer}        = '';
 
   ($position == 0) && return 1;  # All done
 
