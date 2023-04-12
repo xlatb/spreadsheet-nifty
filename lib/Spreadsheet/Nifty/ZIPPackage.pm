@@ -9,8 +9,11 @@ package Spreadsheet::Nifty::ZIPPackage;
 our $namespaces =
 {
   relationshipDefs => 'http://schemas.openxmlformats.org/package/2006/relationships',
-#  relationshipRefs => 'http://schemas.openxmlformats.org/officeDocument/2006/relationships',
+  relationshipRefs => 'http://schemas.openxmlformats.org/officeDocument/2006/relationships',
+
   officeDocument => 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument',
+  sharedStrings => 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings',
+  styles => 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles',
 };
 
 use Archive::Zip;
