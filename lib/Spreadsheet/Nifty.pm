@@ -14,6 +14,20 @@ use constant
   TYPE_DATE => 0x5,
 };
 
+# The numeric value corresponds to the return from the ERROR.TYPE() function.
+my $errorNamesToNumbers =
+{
+  '#NULL!'  => 1,
+  '#DIV/0!' => 2,
+  '#VALUE!' => 3,
+  '#REF!'   => 4,
+  '#NAME?'  => 5,
+  '#NUM!'   => 6,
+  '#N/A'    => 7,
+};
+
+my $errorNumbersToNames;
+
 my $readers =
 [
   {ext => qr#[.]xls$#i,     class => 'Spreadsheet::Nifty::XLS::FileReader'},
@@ -23,6 +37,38 @@ my $readers =
 ];
 
 # === Class methods ===
+
+sub errorName($)
+{
+  my $class = shift();
+  my ($err) = @_;
+
+  # Lazily generate reverse mapping
+  if (!defined($errorNumbersToNames))
+  {
+    $errorNumbersToNames = {};
+    for my $k (keys(%{$errorNamesToNumbers}))
+    {
+      $errorNumbersToNames->{$errorNamesToNumbers->{$k}} = $k;
+    }
+  }
+
+  my $name = $errorNumbersToNames->{$err};
+  if (!defined($name))
+  {
+    return $err;  # Pass unknown errors through unchanged
+  }
+
+  return $name;
+}
+
+sub errorNumber($)
+{
+  my $class = shift();
+  my ($name) = @_;
+
+  return $errorNamesToNumbers->{$name};
+}
 
 # Given a filename, returns a FileReader object or undef if the file is unsupported.
 sub reader($)
