@@ -22,9 +22,13 @@ sub translateRk($)
   #printf("  Intermediate: 0x%08X\n", $value);
   if ($flagB)
   {
-    # Signed integer
+    # 30-bit signed integer
     $value >>= 2;
-    #printf("  Signed integer: %d\n", $value);
+    if ($value & 0x20000000)  # Sign bit
+    {
+      $value = -(($value ^ 0x3FFFFFFF) + 1);  # Flip to negative
+    }
+    #printf("  Signed integer: 0x%08X (%d)\n", $value, $value);
   }
   else
   {
@@ -37,6 +41,7 @@ sub translateRk($)
     #printf("  parts: sign %d exponent %d mantissa %d\n", $sign, $exponent, $mantissa);
     $value = Spreadsheet::Nifty::Utils->ieeePartsToValue($sign, $exponent, $mantissa, 11, 52, 1023);
   }
+
   if ($flagA)
   {
     #printf("  Divide by 100\n");
