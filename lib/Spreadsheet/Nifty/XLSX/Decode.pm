@@ -135,7 +135,6 @@ sub decodeCell($)
     $cell->{row} = int($2) - 1;
   }
 
-  my $value = undef;
   my ($is) = $node->getChildrenByTagNameNS($node->namespaceURI(), 'is');
   if (defined($is) && (!defined($cell->{type}) || ($cell->{type} eq 'inlineStr')))
   {
@@ -160,7 +159,7 @@ sub decodeCell($)
   }
       
   # Coerce numeric values to numbers
-  if (defined($value) && ($cell->{type} eq 'n'))
+  if (defined($cell->{value}) && ($cell->{type} eq 'n'))
   {
     $cell->{value} = 0 + $cell->{value};  # NOTE: Should also work with scientific notation
   }
