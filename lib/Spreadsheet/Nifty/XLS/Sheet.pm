@@ -4,6 +4,8 @@ use strict;
 
 package Spreadsheet::Nifty::XLS::Sheet;
 
+use Spreadsheet::Nifty::XLS::Cell;
+
 # === Class methods ===
 
 sub new()
@@ -35,25 +37,25 @@ sub decodeFormulaResult($)
   #  are not allowed values.
   if (unpack('v', substr($formula->{result}, 6, 2)) != 0xFFFF)
   {
-    return {t => 'NUM', v => unpack('d<', $formula->{result})};
+    return {t => Spreadsheet::Nifty::TYPE_NUM, v => unpack('d<', $formula->{result})};
   }
 
   my $type = ord(substr($formula->{result}, 0, 1));
   if ($type == 0)  # String
   {
-    return {t => 'STR', v => $formula->{string}};
+    return {t => Spreadsheet::Nifty::TYPE_STR, v => $formula->{string}};
   }
   elsif ($type == 1)  # Boolean
   {
-    return {t => 'BOOL', v => ord(substr($formula->{result}, 2, 1))};
+    return {t => Spreadsheet::Nifty::TYPE_BOOL, v => ord(substr($formula->{result}, 2, 1))};
   }
   elsif ($type == 2)  # Error
   {
-    return {t => 'ERR', v => ord(substr($formula->{result}, 2, 1))};
+    return {t => Spreadsheet::Nifty::TYPE_ERR, v => ord(substr($formula->{result}, 2, 1))};
   }
   elsif ($type == 3)  # Blank string
   {
-    return {t => 'STR', v => ''};
+    return {t => Spreadsheet::Nifty::TYPE_STR, v => ''};
   }
 
   die("Unhandled formula result type $type");
@@ -74,45 +76,45 @@ sub readRow()
   {
     if ($cell->{type} == Spreadsheet::Nifty::XLS::RecordTypes::BLANK)
     {
-      $row->[$cell->{col}] = undef;
+      $row->[$cell->{col}] = Spreadsheet::Nifty::XLS::Cell->new(Spreadsheet::Nifty::TYPE_NULL);
     }
     elsif ($cell->{type} == Spreadsheet::Nifty::XLS::RecordTypes::LABEL)
     {
-      $row->[$cell->{col}] = {t => 'STR', v => $cell->{str}};
+      $row->[$cell->{col}] = Spreadsheet::Nifty::XLS::Cell->new(Spreadsheet::Nifty::TYPE_STR, $cell->{str});
     }
     elsif ($cell->{type} == Spreadsheet::Nifty::XLS::RecordTypes::LABEL_SST)
     {
       my $str = $self->{workbook}->{workbook}->{strings}->[$cell->{si}]->{str};
-      $row->[$cell->{col}] = {t => 'STR', v => $str};
+      $row->[$cell->{col}] = Spreadsheet::Nifty::XLS::Cell->new(Spreadsheet::Nifty::TYPE_STR, $str);
     }
     elsif ($cell->{type} == Spreadsheet::Nifty::XLS::RecordTypes::RSTRING)
     {
-      $row->[$cell->{col}] = {t => 'STR', v => $cell->{str}};
+      $row->[$cell->{col}] = Spreadsheet::Nifty::XLS::Cell->new(Spreadsheet::Nifty::TYPE_STR, $cell->{str});
     }
     elsif ($cell->{type} == Spreadsheet::Nifty::XLS::RecordTypes::RK)
     {
       my $num = Spreadsheet::Nifty::XLS::Decode::translateRk($cell->{rk});
-      $row->[$cell->{col}] = {t => 'NUM', v => $num};
+      $row->[$cell->{col}] = Spreadsheet::Nifty::XLS::Cell->new(Spreadsheet::Nifty::TYPE_NUM, $num);
     }
     elsif ($cell->{type} == Spreadsheet::Nifty::XLS::RecordTypes::NUMBER)
     {
-      $row->[$cell->{col}] = {t => 'NUM', v => $cell->{num}};
+      $row->[$cell->{col}] = Spreadsheet::Nifty::XLS::Cell->new(Spreadsheet::Nifty::TYPE_NUM, $cell->{num});
     }
     elsif ($cell->{type} == Spreadsheet::Nifty::XLS::RecordTypes::FORMULA)
     {
       my $data = $self->decodeFormulaResult($cell);
       $data->{f} = $cell->{formula};
-      $row->[$cell->{col}] = $data;
+      $row->[$cell->{col}] = Spreadsheet::Nifty::XLS::Cell->new($data->{t}, $data->{v});
     }
     elsif ($cell->{type} == Spreadsheet::Nifty::XLS::RecordTypes::BOOL_ERR)
     {
       if ($cell->{datatype} == 0)
       {
-        $row->[$cell->{col}] = {t => 'BOOL', v => $cell->{value}};
+        $row->[$cell->{col}] = Spreadsheet::Nifty::XLS::Cell->new(Spreadsheet::Nifty::TYPE_BOOL, $cell->{value});
       }
       elsif ($cell->{datatype} == 1)
       {
-        $row->[$cell->{col}] = {t => 'ERR', v => $cell->{value}};
+        $row->[$cell->{col}] = Spreadsheet::Nifty::XLS::Cell->new(Spreadsheet::Nifty::TYPE_ERR, $cell->{value});
       }
       else
       {
@@ -123,14 +125,15 @@ sub readRow()
     {
       for (my $i = 0; $i < scalar(@{$cell->{recs}}); $i++)
       {
-        $row->[$cell->{minCol} + $i] = {t => 'NUM', v => Spreadsheet::Nifty::XLS::Decode::translateRk($cell->{recs}->[$i]->{rk})};
+        my $v = Spreadsheet::Nifty::XLS::Decode::translateRk($cell->{recs}->[$i]->{rk});
+        $row->[$cell->{minCol} + $i] = Spreadsheet::Nifty::XLS::Cell->new(Spreadsheet::Nifty::TYPE_NUM, $v);
       }
     }
     elsif ($cell->{type} == Spreadsheet::Nifty::XLS::RecordTypes::MUL_BLANK)
     {
       for (my $i = 0; $i < scalar(@{$cell->{xfs}}); $i++)
       {
-        $row->[$cell->{minCol} + $i] = undef;
+        $row->[$cell->{minCol} + $i] = Spreadsheet::Nifty::XLS::Cell->new(Spreadsheet::Nifty::TYPE_NULL);
       }
     }
     else
