@@ -2,7 +2,7 @@
 use warnings;
 use strict;
 
-package Spreadsheet::Nifty::XLSB::Worksheet;
+package Spreadsheet::Nifty::XLSB::SheetReader;
 
 # === Class methods ===
 
@@ -41,7 +41,7 @@ sub open()
   # Read records up until 'BrtBeginSheetData'
   while (my $rec = $self->{records}->read())
   {
-    ($self->{debug}) && printf("Worksheet open(): REC type %d size %d name %s\n", $rec->{type}, $rec->{size}, $rec->{name} // '?');
+    ($self->{debug}) && printf("SheetReader open(): REC type %d size %d name %s\n", $rec->{type}, $rec->{size}, $rec->{name} // '?');
     ($self->{debug}) && ($rec->{size}) && printf("  data: %s\n", unpack('H*', $rec->{data}));
 
     if ($rec->{name} eq 'BrtWsProp')
@@ -121,7 +121,7 @@ sub readRowHeader()
 
   while (my $rec = $self->{records}->read())
   {
-    ($self->{debug}) && printf("Worksheet readRowHeader(): REC type %d size %d name %s\n", $rec->{type}, $rec->{size}, $rec->{name} // '?');
+    ($self->{debug}) && printf("SheetReader readRowHeader(): REC type %d size %d name %s\n", $rec->{type}, $rec->{size}, $rec->{name} // '?');
     ($self->{debug}) && ($rec->{size}) && printf("  data: %s\n", unpack('H*', $rec->{data}));
 
     if ($rec->{name} eq 'BrtRowHdr')
@@ -142,6 +142,117 @@ sub readRowHeader()
   return;
 }
 
+# Given a cell record, returns a cell structure, or undef.
+sub decodeCell($)
+{
+  my $self = shift();
+  my ($rec) = @_;
+
+  my $decoder = Spreadsheet::Nifty::XLSB::Decode->decoder($rec->{data});
+  my $cell;
+
+  if ($rec->{name} eq 'BrtCellBlank')
+  {
+    $cell = $decoder->decodeHash(['column:u32', 'iStyleRef:u24', 'flags:u8']);
+    $cell->{dataType} = Spreadsheet::Nifty::TYPE_NULL;
+  }
+  elsif ($rec->{name} eq 'BrtCellBool')
+  {
+    $cell = $decoder->decodeHash(['column:u32', 'iStyleRef:u24', 'flags:u8', 'value:u8']);
+    $cell->{dataType} = Spreadsheet::Nifty::TYPE_BOOL;
+  }
+  elsif ($rec->{name} eq 'BrtCellError')
+  {
+    $cell = $decoder->decodeHash(['column:u32', 'iStyleRef:u24', 'flags:u8', 'value:u8']);
+    $cell->{dataType} = Spreadsheet::Nifty::TYPE_ERR;
+  }
+  elsif ($rec->{name} eq 'BrtCellSt')
+  {
+    $cell = $decoder->decodeHash(['column:u32', 'iStyleRef:u24', 'flags:u8', 'value:XLWideString']);
+    $cell->{dataType} = Spreadsheet::Nifty::TYPE_STR;
+  }
+  elsif ($rec->{name} eq 'BrtCellRString')  # Rich string
+  {
+    $cell = $decoder->decodeHash(['column:u32', 'iStyleRef:u24', 'flags:u8', 'flags2:u8', 'value:XLWideString']);  # TODO: More fields
+    $cell->{dataType} = Spreadsheet::Nifty::TYPE_STR;
+  }
+  elsif ($rec->{name} eq 'BrtCellReal')
+  {
+    $cell = $decoder->decodeHash(['column:u32', 'iStyleRef:u24', 'flags:u8', 'value:f64']);
+    $cell->{dataType} = Spreadsheet::Nifty::TYPE_NUM;
+    #printf("  Real: %g\n", $cell->{value});
+  }
+  elsif ($rec->{name} eq 'BrtCellIsst')
+  {
+    $cell = $decoder->decodeHash(['column:u32', 'iStyleRef:u24', 'flags:u8', 'value:u32']);
+    my $str = $self->{workbook}->{sharedStrings}->[$cell->{value}]->{string};
+    ($self->{debug}) && printf("Interned string: %s\n", $str);
+    $cell->{dataType} = Spreadsheet::Nifty::TYPE_STR;
+    $cell->{value}    = $str;
+  }
+  elsif ($rec->{name} eq 'BrtCellRk')
+  {
+    $cell = $decoder->decodeHash(['column:u32', 'iStyleRef:u24', 'flags:u8']);
+    my $value = $decoder->decodeField('u32');
+    ($self->{debug}) && printf("  CellRk column %d value 0x%08X\n", $cell->{column}, $value);
+    my $flagA = $value & 0x01;
+    my $flagB = $value & 0x02;
+    $value &= 0xFFFFFFFC;  # Discard flag bits
+    #printf("  Intermediate: 0x%08X flagA %d flagB %d\n", $value, $flagA, $flagB);
+    if ($flagB)
+    {
+      # Signed integer
+      $value >>= 2;
+      #printf("  Signed integer: %d\n", $value);
+    }
+    else
+    {
+      # This worked but is unlikely to be portable
+      #my $packed = pack('C8', reverse(unpack('C8', pack('N', $value) . pack('V', 0))));
+      #$value = unpack('d', $packed');
+      my $sign     = ($value & 0x80000000) >> 31;
+      my $exponent = ($value & 0x7FF00000) >> 20;
+      my $mantissa = ($value & 0x000FFFFF) << 32;
+      ($self->{debug}) && printf("  parts: sign %d exponent %d mantissa %d\n", $sign, $exponent, $mantissa);
+      $value = Spreadsheet::Nifty::Utils->ieeePartsToValue($sign, $exponent, $mantissa, 11, 52, 1023);
+    }
+    if ($flagA)
+    {
+      ($self->{debug}) && printf("  Divide by 100\n");
+      $value = $value / 100;
+    }
+    ($self->{debug}) && printf("  Final value: %s\n", $value);
+    $cell->{dataType} = Spreadsheet::Nifty::TYPE_NUM;
+    $cell->{value} = $value;
+  }
+  elsif ($rec->{name} eq 'BrtFmlaBool')
+  {
+    $cell = $decoder->decodeHash(['column:u32', 'iStyleRef:u24', 'flags:u8', 'value:u8', 'flags2:u16']);  # TODO: More fields
+    $cell->{dataType} = Spreadsheet::Nifty::TYPE_BOOL;
+  }
+  elsif ($rec->{name} eq 'BrtFmlaError')
+  {
+    $cell = $decoder->decodeHash(['column:u32', 'iStyleRef:u24', 'flags:u8', 'value:u8', 'flags2:u16']);  # TODO: More fields
+    $cell->{dataType} = Spreadsheet::Nifty::TYPE_ERR;
+  }
+  elsif ($rec->{name} eq 'BrtFmlaNum')
+  {
+    $cell = $decoder->decodeHash(['column:u32', 'iStyleRef:u24', 'flags:u8', 'value:f64']);  # TODO: More fields
+    $cell->{dataType} = Spreadsheet::Nifty::TYPE_NUM;
+  }
+  elsif ($rec->{name} eq 'BrtFmlaString')
+  {
+    $cell = $decoder->decodeHash(['column:u32', 'iStyleRef:u24', 'flags:u8', 'value:XLWideString', 'flags2:u16']);  # TODO: More fields
+    $cell->{dataType} = Spreadsheet::Nifty::TYPE_STR;
+  }
+
+  (!defined($cell)) && return undef;
+
+  $cell->{type} = $rec->{type};
+  
+  return $cell;
+}
+
 # Reads a row of cells
 sub readRowInternal()
 {
@@ -151,114 +262,10 @@ sub readRowInternal()
 
   while (my $rec = $self->{records}->read())
   {
-    ($self->{debug}) && printf("Worksheet readRowInternal(): REC type %d size %d name %s\n", $rec->{type}, $rec->{size}, $rec->{name} // '?');
+    ($self->{debug}) && printf("SheetReader readRowInternal(): REC type %d size %d name %s\n", $rec->{type}, $rec->{size}, $rec->{name} // '?');
     ($self->{debug}) && ($rec->{size}) && printf("  data: %s\n", unpack('H*', $rec->{data}));
 
-    if ($rec->{name} eq 'BrtCellBlank')
-    {
-      my $decoder = Spreadsheet::Nifty::XLSB::Decode->decoder($rec->{data});
-      my $cell = $decoder->decodeHash(['column:u32', 'iStyleRef:u24', 'flags:u8']);
-      $row->[$cell->{column}] = undef;
-    }
-    elsif ($rec->{name} eq 'BrtCellBool')
-    {
-      my $decoder = Spreadsheet::Nifty::XLSB::Decode->decoder($rec->{data});
-      my $cell = $decoder->decodeHash(['column:u32', 'iStyleRef:u24', 'flags:u8', 'value:u8']);
-      $row->[$cell->{column}] = {t => 'BOOL', v => $cell->{value}, s => $cell->{value} ? 'TRUE' : 'FALSE'};
-    }
-    elsif ($rec->{name} eq 'BrtCellError')
-    {
-      my $decoder = Spreadsheet::Nifty::XLSB::Decode->decoder($rec->{data});
-      my $cell = $decoder->decodeHash(['column:u32', 'iStyleRef:u24', 'flags:u8', 'value:u8']);
-      $row->[$cell->{column}] = {t => 'ERR', v => sprintf("ERROR %d", $cell->{value}), s => sprintf("ERROR %d", $cell->{value})};
-    }
-    elsif ($rec->{name} eq 'BrtCellSt')
-    {
-      my $decoder = Spreadsheet::Nifty::XLSB::Decode->decoder($rec->{data});
-      my $cell = $decoder->decodeHash(['column:u32', 'iStyleRef:u24', 'flags:u8', 'value:XLWideString']);
-      $row->[$cell->{column}] = {t => 'STR', v => $cell->{value}, s => $cell->{value}};
-    }
-    elsif ($rec->{name} eq 'BrtCellRString')  # Rich string
-    {
-      my $decoder = Spreadsheet::Nifty::XLSB::Decode->decoder($rec->{data});
-      my $cell = $decoder->decodeHash(['column:u32', 'iStyleRef:u24', 'flags:u8', 'flags2:u8', 'value:XLWideString']);  # TODO: More fields
-      $row->[$cell->{column}] = {t => 'STR', v => $cell->{value}, s => $cell->{value}};
-    }
-    elsif ($rec->{name} eq 'BrtCellReal')
-    {
-      my $decoder = Spreadsheet::Nifty::XLSB::Decode->decoder($rec->{data});
-      my $cell = $decoder->decodeHash(['column:u32', 'iStyleRef:u24', 'flags:u8', 'value:f64']);
-      #printf("  Real: %g\n", $cell->{value});
-      $row->[$cell->{column}] = {t => 'NUM', v => $cell->{value}, s => $cell->{value}};
-    }
-    elsif ($rec->{name} eq 'BrtCellIsst')
-    {
-      my $decoder = Spreadsheet::Nifty::XLSB::Decode->decoder($rec->{data});
-      my $cell = $decoder->decodeHash(['column:u32', 'iStyleRef:u24', 'flags:u8', 'value:u32']);
-      my $str = $self->{workbook}->{sharedStrings}->[$cell->{value}]->{string};
-      ($self->{debug}) && printf("Interned string: %s\n", $str);
-      $row->[$cell->{column}] = {t => 'STR', v => $str, s => $str};
-    }
-    elsif ($rec->{name} eq 'BrtCellRk')
-    {
-      my $decoder = Spreadsheet::Nifty::XLSB::Decode->decoder($rec->{data});
-      my $cell = $decoder->decodeHash(['column:u32', 'iStyleRef:u24', 'flags:u8']);
-      my $value = $decoder->decodeField('u32');
-      ($self->{debug}) && printf("  CellRk column %d value 0x%08X\n", $cell->{column}, $value);
-      my $flagA = $value & 0x01;
-      my $flagB = $value & 0x02;
-      $value &= 0xFFFFFFFC;  # Discard flag bits
-      #printf("  Intermediate: 0x%08X\n", $value);
-      if ($flagB)
-      {
-        # Signed integer
-        $value >>= 2;
-        #printf("  Signed integer: %d\n", $value);
-      }
-      else
-      {
-        # This worked but is unlikely to be portable
-        #my $packed = pack('C8', reverse(unpack('C8', pack('N', $value) . pack('V', 0))));
-        #$value = unpack('d', $packed');
-        my $sign     = ($value & 0x80000000) >> 31;
-        my $exponent = ($value & 0x7FF00000) >> 20;
-        my $mantissa = ($value & 0x000FFFFF) << 32;
-        ($self->{debug}) && printf("  parts: sign %d exponent %d mantissa %d\n", $sign, $exponent, $mantissa);
-        $value = Spreadsheet::Nifty::Utils->ieeePartsToValue($sign, $exponent, $mantissa, 11, 52, 1023);
-      }
-      if ($flagA)
-      {
-        ($self->{debug}) && printf("  Divide by 100\n");
-        $value = $value / 100;
-      }
-      ($self->{debug}) && printf("  Final value: %s\n", $value);
-      $row->[$cell->{column}] = {t => 'NUM', v => $value, s => $value};
-    }
-    elsif ($rec->{name} eq 'BrtFmlaBool')
-    {
-      my $decoder = Spreadsheet::Nifty::XLSB::Decode->decoder($rec->{data});
-      my $cell = $decoder->decodeHash(['column:u32', 'iStyleRef:u24', 'flags:u8', 'value:u8', 'flags2:u16']);  # TODO: More fields
-      $row->[$cell->{column}] = {t => 'BOOL', v => $cell->{value}, s => $cell->{value} ? 'TRUE' : 'FALSE'};
-    }
-    elsif ($rec->{name} eq 'BrtFmlaError')
-    {
-      my $decoder = Spreadsheet::Nifty::XLSB::Decode->decoder($rec->{data});
-      my $cell = $decoder->decodeHash(['column:u32', 'iStyleRef:u24', 'flags:u8', 'value:u8', 'flags2:u16']);  # TODO: More fields
-      $row->[$cell->{column}] = {t => 'ERR', v => sprintf("ERROR %d", $cell->{value}), s => sprintf("ERROR %d", $cell->{value})};
-    }
-    elsif ($rec->{name} eq 'BrtFmlaNum')
-    {
-      my $decoder = Spreadsheet::Nifty::XLSB::Decode->decoder($rec->{data});
-      my $cell = $decoder->decodeHash(['column:u32', 'iStyleRef:u24', 'flags:u8', 'value:f64']);  # TODO: More fields
-      $row->[$cell->{column}] = {t => 'NUM', v => $cell->{value}, s => $cell->{value}};
-    }
-    elsif ($rec->{name} eq 'BrtFmlaString')
-    {
-      my $decoder = Spreadsheet::Nifty::XLSB::Decode->decoder($rec->{data});
-      my $cell = $decoder->decodeHash(['column:u32', 'iStyleRef:u24', 'flags:u8', 'value:XLWideString', 'flags2:u16']);  # TODO: More fields
-      $row->[$cell->{column}] = {t => 'STR', v => $cell->{value}, s => $cell->{value}};
-    }
-    elsif ($rec->{name} eq 'BrtRowHdr')
+    if ($rec->{name} eq 'BrtRowHdr')
     {
       my $decoder = Spreadsheet::Nifty::XLSB::Decode->decoder($rec->{data});
       my $rowHdr = $decoder->decodeHash(['row:u32', 'ixfe:u32', 'height:u16', 'flags1:u16', 'flags2:u8', 'ccolspan:u32']);
@@ -270,6 +277,14 @@ sub readRowInternal()
     {
       $self->{rowHeader} = {type => $rec->{name}};
       last;
+    }
+    else
+    {
+      my $cell = $self->decodeCell($rec);
+      (!defined($cell)) && next;
+
+      (!defined($cell->{column})) && die("Returned cell with no column?");
+      $row->[$cell->{column}] = $cell;
     }
   }
 

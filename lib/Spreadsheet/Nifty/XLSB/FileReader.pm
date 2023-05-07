@@ -7,7 +7,8 @@ package Spreadsheet::Nifty::XLSB::FileReader;
 use Spreadsheet::Nifty::XLSB;
 use Spreadsheet::Nifty::XLSB::RecordReader;
 use Spreadsheet::Nifty::XLSB::RecordTypes;
-use Spreadsheet::Nifty::XLSB::Worksheet;
+use Spreadsheet::Nifty::XLSB::SheetReader;
+use Spreadsheet::Nifty::XLSB::Sheet;
 use Spreadsheet::Nifty::XLSB::Decode;
 use Spreadsheet::Nifty::StructDecoder;
 use Spreadsheet::Nifty::ZIPPackage;
@@ -106,7 +107,7 @@ sub readSharedStrings()
   my $self = shift();
 
   # Find workbook's shared strings relationship
-  my $rel = $self->{zipPackage}->getRelationshipByType($self->{workbook}->{relationships}, $Spreadsheet::Nifty::XLSB::namespaces->{sharedStrings});
+  my $rel = $self->{zipPackage}->getRelationshipByType($self->{workbook}->{relationships}, $Spreadsheet::Nifty::ZIPPackage::namespaces->{sharedStrings});
   (!defined($rel)) && return 0;
 
   $self->{sharedStrings} = [];
@@ -186,9 +187,10 @@ sub openSheet($)
   my $rel = $self->{workbook}->{relationships}->{$relId};
   (!defined($rel)) && return undef;
 
-  my $sheet = Spreadsheet::Nifty::XLSB::Worksheet->new($self, $index, $rel->{partname});
-  $sheet->open();
+  my $reader = Spreadsheet::Nifty::XLSB::SheetReader->new($self, $index, $rel->{partname});
+  $reader->open();
 
+  my $sheet = Spreadsheet::Nifty::XLSB::Sheet->new($self, $reader);
   return $sheet;
 }
 
