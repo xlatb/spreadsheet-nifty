@@ -193,35 +193,7 @@ sub decodeCell($)
   elsif ($rec->{name} eq 'BrtCellRk')
   {
     $cell = $decoder->decodeHash(['column:u32', 'iStyleRef:u24', 'flags:u8']);
-    my $value = $decoder->decodeField('u32');
-    ($self->{debug}) && printf("  CellRk column %d value 0x%08X\n", $cell->{column}, $value);
-    my $flagA = $value & 0x01;
-    my $flagB = $value & 0x02;
-    $value &= 0xFFFFFFFC;  # Discard flag bits
-    #printf("  Intermediate: 0x%08X flagA %d flagB %d\n", $value, $flagA, $flagB);
-    if ($flagB)
-    {
-      # Signed integer
-      $value >>= 2;
-      #printf("  Signed integer: %d\n", $value);
-    }
-    else
-    {
-      # This worked but is unlikely to be portable
-      #my $packed = pack('C8', reverse(unpack('C8', pack('N', $value) . pack('V', 0))));
-      #$value = unpack('d', $packed');
-      my $sign     = ($value & 0x80000000) >> 31;
-      my $exponent = ($value & 0x7FF00000) >> 20;
-      my $mantissa = ($value & 0x000FFFFF) << 32;
-      ($self->{debug}) && printf("  parts: sign %d exponent %d mantissa %d\n", $sign, $exponent, $mantissa);
-      $value = Spreadsheet::Nifty::Utils->ieeePartsToValue($sign, $exponent, $mantissa, 11, 52, 1023);
-    }
-    if ($flagA)
-    {
-      ($self->{debug}) && printf("  Divide by 100\n");
-      $value = $value / 100;
-    }
-    ($self->{debug}) && printf("  Final value: %s\n", $value);
+    my $value = Spreadsheet::Nifty::Utils->translateRk($decoder->decodeField('u32'));
     $cell->{dataType} = Spreadsheet::Nifty::TYPE_NUM;
     $cell->{value} = $value;
   }

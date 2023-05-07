@@ -8,50 +8,6 @@ use Spreadsheet::Nifty::Utils;
 
 use Encode qw();
 
-# === Utilities ===
-
-# An Rk is a number packed into a 32-bit value in a goofy way.
-sub translateRk($)
-{
-  my ($value) = @_;
-
-  my $flagA = $value & 0x01;
-  my $flagB = $value & 0x02;
-  $value &= 0xFFFFFFFC;  # Discard flag bits
-
-  #printf("  Intermediate: 0x%08X\n", $value);
-  if ($flagB)
-  {
-    # 30-bit signed integer
-    $value >>= 2;
-    if ($value & 0x20000000)  # Sign bit
-    {
-      $value = -(($value ^ 0x3FFFFFFF) + 1);  # Flip to negative
-    }
-    #printf("  Signed integer: 0x%08X (%d)\n", $value, $value);
-  }
-  else
-  {
-    # This worked but is unlikely to be portable
-    #my $packed = pack('C8', reverse(unpack('C8', pack('N', $value) . pack('V', 0))));
-    #$value = unpack('d', $packed');
-    my $sign     = ($value & 0x80000000) >> 31;
-    my $exponent = ($value & 0x7FF00000) >> 20;
-    my $mantissa = ($value & 0x000FFFFF) << 32;
-    #printf("  parts: sign %d exponent %d mantissa %d\n", $sign, $exponent, $mantissa);
-    $value = Spreadsheet::Nifty::Utils->ieeePartsToValue($sign, $exponent, $mantissa, 11, 52, 1023);
-  }
-
-  if ($flagA)
-  {
-    #printf("  Divide by 100\n");
-    $value = $value / 100;
-  }
-  #printf("  Final value: %s\n", $value);
-
-  return $value;
-}
-
 # === Single-field decoders ===
 
 sub decodeNoLenAnsiString($$)
@@ -563,7 +519,7 @@ sub decodeAutoFilter($)
     }
     elsif ($operator->{valueType} == 0x02)  # Rk
     {
-      $operator->{value} = translateRk($decoder->decodeField('u32'));
+      $operator->{value} = Spreadsheet::Nifty::Utils->translateRk($decoder->decodeField('u32'));
       $decoder->getBytes(4);
     }
     elsif ($operator->{valueType} == 0x04)  # Xnum

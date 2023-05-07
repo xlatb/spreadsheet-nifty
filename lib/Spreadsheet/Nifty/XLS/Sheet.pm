@@ -93,7 +93,7 @@ sub readRow()
     }
     elsif ($cell->{type} == Spreadsheet::Nifty::XLS::RecordTypes::RK)
     {
-      my $num = Spreadsheet::Nifty::XLS::Decode::translateRk($cell->{rk});
+      my $num = Spreadsheet::Nifty::Utils->translateRk($cell->{rk});
       $row->[$cell->{col}] = Spreadsheet::Nifty::XLS::Cell->new(Spreadsheet::Nifty::TYPE_NUM, $num);
     }
     elsif ($cell->{type} == Spreadsheet::Nifty::XLS::RecordTypes::NUMBER)
@@ -125,7 +125,7 @@ sub readRow()
     {
       for (my $i = 0; $i < scalar(@{$cell->{recs}}); $i++)
       {
-        my $v = Spreadsheet::Nifty::XLS::Decode::translateRk($cell->{recs}->[$i]->{rk});
+        my $v = Spreadsheet::Nifty::Utils->translateRk($cell->{recs}->[$i]->{rk});
         $row->[$cell->{minCol} + $i] = Spreadsheet::Nifty::XLS::Cell->new(Spreadsheet::Nifty::TYPE_NUM, $v);
       }
     }
