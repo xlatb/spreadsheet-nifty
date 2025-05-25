@@ -134,7 +134,7 @@ sub open($)
   return 1;
 }
 
-sub openMember($)
+sub _getMember($)
 {
   my $self = shift();
   my ($membername) = @_;
@@ -144,6 +144,16 @@ sub openMember($)
 
   my $zipMember = $self->{zip}->memberNamed($membername);
   (!$zipMember) && die("Member '${membername}' not found in this ZIP package\n");
+
+  return $zipMember;
+}
+
+sub openMember($)
+{
+  my $self = shift();
+  my ($membername) = @_;
+
+  my $zipMember = $self->_getMember($membername);
 
   my $zipReader = Spreadsheet::Nifty::ZIPReader->new($zipMember);
   return $zipReader;
