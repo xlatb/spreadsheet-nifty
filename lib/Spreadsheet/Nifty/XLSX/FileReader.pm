@@ -169,6 +169,16 @@ sub readSharedStrings()
   return;
 }
 
+sub getSharedString($)
+{
+  my $self = shift();
+  my ($i) = @_;
+
+  (($i < 0) || ($i > scalar(@{$self->{sharedStrings}}))) && die("getSharedString(): Out of range");
+
+  return $self->{sharedStrings}->[$i];
+}
+
 sub readStyles()
 {
   my $self = shift();

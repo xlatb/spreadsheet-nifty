@@ -39,6 +39,37 @@ sub value()
   return $self->{v};
 }
 
+sub stringValue()
+{
+  my $self = shift();
+
+  my $t = $self->{t};
+  if ($t == Spreadsheet::Nifty::TYPE_NULL)
+  {
+    return undef;
+  }
+  elsif (($t == Spreadsheet::Nifty::TYPE_NUM) || ($t == Spreadsheet::Nifty::TYPE_STR))
+  {
+    return $self->{v};
+  }
+  elsif ($t == Spreadsheet::Nifty::TYPE_ERR)
+  {
+    return Spreadsheet::Nifty->errorName($self->{v});
+  }
+  elsif ($t == Spreadsheet::Nifty::TYPE_BOOL)
+  {
+    return ($self->{v} ? 'TRUE' : 'FALSE');
+  }
+  elsif ($t == Spreadsheet::Nifty::TYPE_DATE)
+  {
+    ...;
+  }
+  else
+  {
+    die('Unknown data type');
+  }
+}
+
 sub type()
 {
   my $self = shift();
