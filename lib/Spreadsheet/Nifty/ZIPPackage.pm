@@ -12,8 +12,10 @@ our $namespaces =
   relationshipRefs => 'http://schemas.openxmlformats.org/officeDocument/2006/relationships',
 
   officeDocument => 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument',
-  sharedStrings => 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings',
-  styles => 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles',
+  sharedStrings  => 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings',
+  styles         => 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles',
+
+  binaryIndex    => 'http://schemas.microsoft.com/office/2006/relationships/xlBinaryIndex',
 };
 
 use Archive::Zip;

@@ -2,6 +2,8 @@
 use warnings;
 use strict;
 
+use Spreadsheet::Nifty::XLSB::BinaryIndex;
+
 package Spreadsheet::Nifty::XLSB::SheetReader;
 
 # === Class methods ===
@@ -12,15 +14,17 @@ sub new()
   my ($workbook, $index, $partname) = @_;
 
   my $self = {};
-  $self->{workbook}   = $workbook;
-  $self->{sheetIndex} = $index;
-  $self->{partname}   = $partname;
-  $self->{debug}      = $workbook->{debug};
-  $self->{records}    = undef;
-  $self->{rowIndex}   = 0;
-  $self->{rowHeader}  = undef;  # BrtRowHdr or BrtEndSheetData
-  $self->{protection} = undef;  # BrtSheetProtection or BrtSheetProtectionIso
-  $self->{props}      = {};  # BrtWsProp
+  $self->{workbook}      = $workbook;
+  $self->{relationships} = undef;
+  $self->{binaryIndex}   = undef;
+  $self->{sheetIndex}    = $index;
+  $self->{partname}      = $partname;
+  $self->{debug}         = $workbook->{debug};
+  $self->{records}       = undef;
+  $self->{rowIndex}      = 0;
+  $self->{rowHeader}     = undef;  # BrtRowHdr or BrtEndSheetData
+  $self->{protection}    = undef;  # BrtSheetProtection or BrtSheetProtectionIso
+  $self->{props}         = {};  # BrtWsProp
 
   bless($self, $class);
 
@@ -38,10 +42,33 @@ sub open()
 
   $self->{records} = Spreadsheet::Nifty::XLSB::RecordReader->new($reader);
 
+  # Read relationships
+  ($self->{debug}) && printf("SheetReader read relationships\n");
+  $self->{relationships} = $self->{workbook}->{zipPackage}->readRelationshipsMember($self->{workbook}->{zipPackage}->partnameToRelationshipsPart($self->{partname}));
+
+  # Read binary index
+  ($self->{debug}) && printf("SheetReader read binary index\n");
+  $self->readBinaryIndex();
+
+  # Read initial records
+  ($self->{debug}) && printf("SheetReader read initial records\n");
+  $self->readInitial();
+
+  return;
+}
+
+# Read initial records up until sheet data begins, and records the first row header.
+sub readInitial()
+{
+  my $self = shift();
+
+  # Ensure we're at the start of the file
+  $self->{records}->rewind();
+
   # Read records up until 'BrtBeginSheetData'
   while (my $rec = $self->{records}->read())
   {
-    ($self->{debug}) && printf("SheetReader open(): REC type %d size %d name %s\n", $rec->{type}, $rec->{size}, $rec->{name} // '?');
+    ($self->{debug}) && printf("SheetReader readInitial(): REC type %d size %d name %s\n", $rec->{type}, $rec->{size}, $rec->{name} // '?');
     ($self->{debug}) && ($rec->{size}) && printf("  data: %s\n", unpack('H*', $rec->{data}));
 
     if ($rec->{name} eq 'BrtWsProp')
@@ -68,15 +95,77 @@ sub open()
   return;
 }
 
-# NOTE: Resets the read position. Don't attempt to read rows after calling. Don't attempt to call twice.
+# Given a byte offset, which must be the start of a record, reads up until the next row header.
+sub seekFollowingRowByOffset($)
+{
+  my $self = shift();
+  my ($offset) = @_;
+
+  $self->{rowHeader} = undef;
+
+  $self->{records}->rewind();
+  $self->{records}->readBytes($offset);
+
+  $self->readRowHeader();
+  return;
+}
+
+sub readBinaryIndex()
+{
+  my $self = shift();
+
+  # Find workbook's binary index relationship
+  my $rel = $self->{workbook}->{zipPackage}->getRelationshipByType($self->{relationships}, $Spreadsheet::Nifty::ZIPPackage::namespaces->{binaryIndex});
+  (!defined($rel)) && return !!0;
+
+  my $member =  $self->{workbook}->{zipPackage}->openMember($rel->{partname});
+  (!$member) && die("Couldn't open member '$rel->{partname}'\n");
+
+  my $index = Spreadsheet::Nifty::XLSB::BinaryIndex->new();
+  (!$index->read($member)) && return !!0;
+
+  $self->{binaryIndex} = $index;
+  return !!1;
+}
+
+# Positions us past the end of the sheet data.
+sub skipSheetData()
+{
+  my $self = shift();
+
+  # If we already saw the end of the sheet data, seek back to it
+  if (defined($self->{rowHeader}) && ($self->{rowHeader}->{type} eq 'BrtEndSheetData'))
+  {
+    my $offset = $self->{rowHeader}->{offset};
+    ($self->{debug}) && printf("skipSheetData(): Cached sheet end offset: %ld\n", $offset);
+    $self->seekFollowingRowByOffset($offset);
+    (defined($self->{rowHeader}) && ($self->{rowHeader}->{type} eq 'BrtEndSheetData')) && return;  # It worked
+  }
+
+  # If we have a binary index, use it to skip over the sheet data
+  if (defined($self->{binaryIndex}))
+  {
+    my $offset = $self->{binaryIndex}->getFinalOffset();
+    ($self->{debug}) && printf("skipSheetData(): Binary index final offset: %ld\n", $offset);
+    $self->seekFollowingRowByOffset($offset);
+    (defined($self->{rowHeader}) && ($self->{rowHeader}->{type} eq 'BrtEndSheetData')) && return;  # It worked
+  }
+
+  # Sequentially skip over any remaining row data
+  ($self->{debug}) && printf("skipSheetData(): Cannot use index, time for sequential skip...\n");
+  while ($self->skipRow()) { ; }
+  ($self->{debug}) && printf("skipSheetData(): Resting place: %ld\n", $self->{records}->tell());
+
+  return;
+}
+
+# NOTE: Resets the read position. Don't attempt to read rows after calling.
 sub readProtection()
 {
   my $self = shift();
 
-  # TODO: Use binary index or cached offsets
-
-  # Skip over any remaining row data
-  while (defined($self->readRow())) {}
+  # Skip past sheet data
+  $self->skipSheetData();
 
   # Read records looking for 'BrtSheetProtectionIso' or 'BrtSheetProtection'
   while (my $rec = $self->{records}->read())
@@ -97,8 +186,6 @@ sub readProtection()
     }
     elsif ($rec->{name} eq 'BrtSheetProtection')
     {
-      (defined($self->{protection})) && next;  # Likely already has BrtSheetProtectionIso
-
       my $decoder = Spreadsheet::Nifty::XLSB::Decode->decoder($rec->{data});
       my $protection = $decoder->decodeHash(['hash:u16']);  # TODO: Flag fields
       $protection->{type} = 'excel16';
@@ -119,6 +206,7 @@ sub readRowHeader()
   my $rowHdr;
   my $row = [];
 
+  my $offset = $self->{records}->tell();
   while (my $rec = $self->{records}->read())
   {
     ($self->{debug}) && printf("SheetReader readRowHeader(): REC type %d size %d name %s\n", $rec->{type}, $rec->{size}, $rec->{name} // '?');
@@ -128,15 +216,17 @@ sub readRowHeader()
     {
       my $decoder = Spreadsheet::Nifty::XLSB::Decode->decoder($rec->{data});
       my $rowHdr = $decoder->decodeHash(['row:u32', 'ixfe:u32', 'height:u16', 'flags1:u16', 'flags2:u8', 'ccolspan:u32']);
-      $self->{rowHeader} = {type => $rec->{name}, data => $rowHdr};
+      $self->{rowHeader} = {type => $rec->{name}, offset => $offset, data => $rowHdr};
       ($self->{debug}) && print main::Dumper($rowHdr);
       last;
     }
     elsif ($rec->{name} eq 'BrtEndSheetData')
     {
-      $self->{rowHeader} = {type => $rec->{name}};
+      $self->{rowHeader} = {type => $rec->{name}, offset => $offset};
       last;
     }
+
+    $offset = $self->{records}->tell();
   }
 
   return;
@@ -232,6 +322,7 @@ sub readRowInternal()
 
   my $row = [];
 
+  my $offset = $self->{records}->tell();
   while (my $rec = $self->{records}->read())
   {
     ($self->{debug}) && printf("SheetReader readRowInternal(): REC type %d size %d name %s\n", $rec->{type}, $rec->{size}, $rec->{name} // '?');
@@ -241,13 +332,13 @@ sub readRowInternal()
     {
       my $decoder = Spreadsheet::Nifty::XLSB::Decode->decoder($rec->{data});
       my $rowHdr = $decoder->decodeHash(['row:u32', 'ixfe:u32', 'height:u16', 'flags1:u16', 'flags2:u8', 'ccolspan:u32']);
-      $self->{rowHeader} = {type => $rec->{name}, data => $rowHdr};
+      $self->{rowHeader} = {type => $rec->{name}, offset => $offset, data => $rowHdr};
       ($self->{debug}) && print main::Dumper($rowHdr);
       last;
     }
     elsif ($rec->{name} eq 'BrtEndSheetData')
     {
-      $self->{rowHeader} = {type => $rec->{name}};
+      $self->{rowHeader} = {type => $rec->{name}, offset => $offset};
       last;
     }
     else
@@ -258,6 +349,8 @@ sub readRowInternal()
       (!defined($cell->{column})) && die("Returned cell with no column?");
       $row->[$cell->{column}] = $cell;
     }
+
+    $offset = $self->{records}->tell();
   }
 
   return $row;
@@ -268,6 +361,41 @@ sub tellRow()
   my $self = shift();
 
   return $self->{rowIndex};
+}
+
+# Skip forward to the next row that contains data.
+sub skipRow()
+{
+  my $self = shift();
+
+  (!defined($self->{rowHeader})) && die("No row header?");
+
+  ($self->{rowHeader}->{type} eq 'BrtEndSheetData') && return !!0;  # No more rows
+
+  my $offset = $self->{records}->tell();
+  while (my $rec = $self->{records}->read())
+  {
+    ($self->{debug}) && printf("SheetReader skipRow(): REC type %d size %d name %s\n", $rec->{type}, $rec->{size}, $rec->{name} // '?');
+    ($self->{debug}) && ($rec->{size}) && printf("  data: %s\n", unpack('H*', $rec->{data}));
+
+    if ($rec->{name} eq 'BrtRowHdr')
+    {
+      my $decoder = Spreadsheet::Nifty::XLSB::Decode->decoder($rec->{data});
+      my $rowHdr = $decoder->decodeHash(['row:u32', 'ixfe:u32', 'height:u16', 'flags1:u16', 'flags2:u8', 'ccolspan:u32']);
+      $self->{rowHeader} = {type => $rec->{name}, offset => $offset, data => $rowHdr};
+      ($self->{debug}) && print main::Dumper($rowHdr);
+      last;
+    }
+    elsif ($rec->{name} eq 'BrtEndSheetData')
+    {
+      $self->{rowHeader} = {type => $rec->{name}, offset => $offset};
+      last;
+    }
+
+    $offset = $self->{records}->tell();
+  }
+
+  return !!1;
 }
 
 sub readRow()

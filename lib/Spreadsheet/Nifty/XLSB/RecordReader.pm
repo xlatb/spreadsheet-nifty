@@ -77,4 +77,19 @@ sub read($)
   return {type => $type, size => $size, data => $data, name => $name};
 }
 
+sub rewind()
+{
+  my $self = shift();
+
+  $self->{reader}->rewind();
+  return;
+}
+
+sub tell()
+{
+  my $self = shift();
+
+  return $self->{reader}->tell();
+}
+
 1;

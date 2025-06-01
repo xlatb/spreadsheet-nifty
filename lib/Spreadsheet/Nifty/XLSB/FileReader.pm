@@ -2,6 +2,8 @@
 use warnings;
 use strict;
 
+use Data::Dumper;
+
 package Spreadsheet::Nifty::XLSB::FileReader;
 
 use Spreadsheet::Nifty::XLSB;
@@ -12,8 +14,6 @@ use Spreadsheet::Nifty::XLSB::Sheet;
 use Spreadsheet::Nifty::XLSB::Decode;
 use Spreadsheet::Nifty::StructDecoder;
 use Spreadsheet::Nifty::ZIPPackage;
-
-use Data::Dumper;
 
 # === Class methods ===
 
@@ -72,26 +72,20 @@ sub read()
   my $self = shift();
 
   # Read top-level relationships
-  ($self->{debug}) && printf("read relationships\n");
+  ($self->{debug}) && printf("FileReader read relationships\n");
   $self->{relationships} = $self->{zipPackage}->readRelationshipsMember('_rels/.rels');
 
   # Read workbook
-  ($self->{debug}) && printf("readWorkbook\n");
+  ($self->{debug}) && printf("FileReader readWorkbook\n");
   $self->readWorkbook();
 
-  ($self->{debug}) && printf("readSharedStrings\n");
+  ($self->{debug}) && printf("FileReader readSharedStrings\n");
   $self->readSharedStrings();
   
-  #($self->{debug}) && printf("readStyles\n");
+  #($self->{debug}) && printf("FileReader readStyles\n");
   #$self->readStyles();
   #($self->{debug}) && print main::Dumper($self->{numberFormats});
 
-  #($self->{debug}) && printf("readRelationships\n");
-  #$self->readRelationships();
-  
-  #($self->{debug}) && printf("readWorkbook\n");
-  #$self->readWorkbook();
-  
   #for my $sheet (@{$self->{worksheets}})
   #{
   #  ($self->{debug}) && printf("readWorksheet\n");

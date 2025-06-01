@@ -20,6 +20,7 @@ sub new()
   $self->{open}          = 0;
   $self->{zipStreamDone} = 1;
   $self->{member}        = $member;
+  $self->{position}      = undef;
   $self->{buffer}        = '';
   
   bless($self, $class);
@@ -49,6 +50,7 @@ sub _open()
   {
     $self->{open} = 1;
     $self->{zipStreamDone} = 0;
+    $self->{position} = 0;
   }
   
   return;
@@ -91,6 +93,7 @@ sub read($$$)
     {
       $$bufref = substr($self->{buffer}, 0, $len);
       $self->{buffer} = substr($self->{buffer}, $len);
+      $self->{position} += $len;
       return $len;
     }
     
@@ -115,6 +118,7 @@ sub read($$$)
       $$bufref = $self->{buffer};
       $len = length($self->{buffer});
       $self->{buffer} = '';
+      $self->{position} += $len;
       return $len;
     }
   }
@@ -134,10 +138,32 @@ sub seek($;$)
 
   $self->{zipStreamDone} = 0;
   $self->{buffer}        = '';
+  $self->{position}      = $position;
 
   ($position == 0) && return 1;  # All done
 
   die(ref($self) . ": Unsupported: seek() can only return to position 0");
+}
+
+sub tell()
+{
+  my $self = shift();
+
+  return $self->{position};
+}
+
+sub rewind()
+{
+  my $self = shift();
+
+  my $status = $self->{member}->rewindData();
+  ($status != AZ_OK) && return;
+
+  $self->{zipStreamDone} = 0;
+  $self->{buffer}        = '';
+  $self->{position}      = 0;
+
+  return;
 }
 
 1;
