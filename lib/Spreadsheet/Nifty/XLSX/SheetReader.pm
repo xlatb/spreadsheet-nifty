@@ -239,39 +239,43 @@ sub readRow($)
     die("readRow(): Expected to start reading at <row/> element.");
   }
 
-  my $row = Spreadsheet::Nifty::XLSX::Decode->decodeRow($self->{xmlReader}->copyCurrentNode(0));
-  $self->{xmlReader}->nextElement();
-  
+  my $rowNode = $self->{xmlReader}->copyCurrentNode(1);
+  my $row = Spreadsheet::Nifty::XLSX::Decode->decodeRow($rowNode);
+  $self->{xmlReader}->nextSibling();
+
+  # Some XLSX spreadsheets suffer from a "row bloat" problem, where an entire
+  #  row had a format applied, and in response Excel manifests every cell
+  #  in the row as an empty cell with a style applied to it.
+  # This makes extracting the row data very slow because we're needlessly 
+  #  churniing through 16k cells per row.
+  # We use this xpath to find the final cell in the row that contains data.
+  my $xpath = XML::LibXML::XPathContext->new($rowNode);
+  $xpath->registerNs('excel', $xmlns);
+  my ($final) = $xpath->findnodes('child::excel:c[excel:v or excel:is][last()]');
+  ($self->{debug}) && printf("Final cell with a value on this row: %s\n", $final ? $final->toString() : '(undef)');
+  (!defined($final)) && return [];  # Quick exit if there are no values on this row
+
+  # Now we retrieve the preceding cells on the row, whether or not they
+  #  contain a value, and use that to construct our array of cells to process
+  #  on this row.
+  my $cNodes = [ $xpath->findnodes('preceding-sibling::excel:c', $final) ];
+  push(@{$cNodes}, $final);  # Add back the final one
+
   my $cells = [];
-  while (1)
+  for my $cNode (@{$cNodes})
   {
-    #printf("readRow() depth %d nodeType %d localname %s\n", $self->{xmlReader}->depth(), $self->{xmlReader}->nodeType(), $self->{xmlReader}->localName());
+    my $cell = Spreadsheet::Nifty::XLSX::Decode->decodeCell($cNode);
 
-    if ($self->{xmlReader}->depth() < 3)
+    (defined($cell->{row}) && ($row->{rowIndex} != $cell->{row})) && die("Read a cell from the wrong row?");
+
+    if (defined($cell->{col}))
     {
-      # No longer within <row/>
-      last;
+      $cells->[$cell->{col}] = $cell;
     }
-
-    if (($self->{xmlReader}->nodeType() == XML_READER_TYPE_ELEMENT) && ($self->{xmlReader}->namespaceURI() eq $xmlns) && ($self->{xmlReader}->localName() eq 'c'))
+    else
     {
-      my $node = $self->{xmlReader}->copyCurrentNode(1);
-      my $cell = Spreadsheet::Nifty::XLSX::Decode->decodeCell($node);
-
-      (defined($cell->{row}) && ($row->{rowIndex} != $cell->{row})) && die("Read a cell from the wrong row?");
-
-      if (defined($cell->{col}))
-      {
-        $cells->[$cell->{col}] = $cell;
-      }
-      else
-      {
-        push(@{$cells}, $cell);
-      }
+      push(@{$cells}, $cell);
     }
-
-    my $status = $self->{xmlReader}->nextSibling();
-    ($status != 1) && last;  # No more elements
   }
 
   # Elements with start and end tags come up twice, once for the start tag and
