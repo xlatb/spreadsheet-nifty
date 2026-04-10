@@ -173,4 +173,17 @@ sub stringToColIndex($)
   return $index - 1;
 }
 
+sub stringToCellRef($)
+{
+  my $class = shift();
+  my ($string) = @_;
+
+  ($string !~ m#^([A-Z]+)(\d+)$#i) && return undef;
+
+  my $col = $class->stringToColIndex($1);
+  my $row = int($2) - 1;
+
+  return {col => $col, row => $row};
+}
+
 1;

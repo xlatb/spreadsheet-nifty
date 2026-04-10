@@ -38,6 +38,13 @@ sub new()
 
 # === Instance methods ===
 
+sub workbook()
+{
+  my $self = shift();
+
+  return $self->{workbook};
+}
+
 sub open()
 {
   my $self = shift();

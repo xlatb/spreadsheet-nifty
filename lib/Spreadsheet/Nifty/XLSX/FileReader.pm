@@ -136,6 +136,22 @@ sub resolveColor($)
   return undef;
 }
 
+sub getXf($)
+{
+  my $self = shift();
+  my ($i) = @_;
+
+  return $self->{styles}->{xfs}->[$i];
+}
+
+sub getFill($)
+{
+  my $self = shift();
+  my ($i) = @_;
+
+  return $self->{styles}->{fills}->[$i];
+}
+
 sub readSharedStrings()
 {
   my $self = shift();
@@ -309,16 +325,7 @@ sub readStyles()
     }
   }
 
-  $self->{styles} = $styles;
-  $self->{fills} = $fills;
-  $self->{numberFormats} = $numberFormats;
-  $self->{indexedColors} = $indexedColors;
-  $self->{fonts} = $fonts;
-
-  #print main::Dumper('styles', $self->{styles});
-  #print main::Dumper('fonts', $self->{fonts});
-  #print main::Dumper('indexedColors', $self->{indexedColors});
-
+  $self->{styles} = {xfs => $styles, fills => $fills, numberFormats => $numberFormats, indexedColors => $indexedColors, fonts => $fonts};
   return;
 }
 

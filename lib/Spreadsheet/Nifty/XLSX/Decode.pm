@@ -109,14 +109,14 @@ sub decodeRow($)
   my $row = {};
 
   $row->{rowIndex} = int($node->getAttribute('r') - 1);
-  $row->{styleIndex} = $class->decodeBool($node->getAttribute('customFormat') // '0') ? $node->getAttribute('s') : undef;
+  $row->{xfIndex} = $class->decodeBool($node->getAttribute('customFormat') // '0') ? $node->getAttribute('s') : undef;
   $row->{height} = $class->decodeBool($node->getAttribute('customHeight') // '0') ? $node->getAttribute('ht') : undef;
   $row->{hidden} = $class->decodeBool($node->getAttribute('hidden') // '0');
 
   return $row;
 }
 
-# <c xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" r="A6" s="3" t="s"><v>5</v></c>
+# <c xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" r="A6" s="3" t="s"><v>5</v><f>4+1</f></c>
 sub decodeCell($)
 {
   my $class = shift();
@@ -125,7 +125,7 @@ sub decodeCell($)
   my $cell = {};
 
   $cell->{type} = $node->getAttribute('t') // 'n';  # Optional attribute, defaults to numeric
-  $cell->{styleIndex} = int($node->getAttribute('s') // 0);
+  $cell->{xfIndex} = int($node->getAttribute('s') // 0);
 
   my $ref = $node->getAttribute('r');
   if (defined($ref))
@@ -162,6 +162,13 @@ sub decodeCell($)
   if (defined($cell->{value}) && ($cell->{type} eq 'n'))
   {
     $cell->{value} = 0 + $cell->{value};  # NOTE: Should also work with scientific notation
+  }
+
+  # Include formula string, if any
+  my ($f) = $node->getChildrenByTagNameNS($node->namespaceURI(), 'f');
+  if (defined($f))
+  {
+    $cell->{formula} = $f->textContent();
   }
 
   return $cell;
