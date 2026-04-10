@@ -77,6 +77,18 @@ sub type()
   return $self->{t};
 }
 
+sub typeName()
+{
+  my $self = shift();
+
+  return Spreadsheet::Nifty->typeName($self->{t});
+}
+
+sub formula()
+{
+  ...;
+}
+
 sub formatString()
 {
   ...;

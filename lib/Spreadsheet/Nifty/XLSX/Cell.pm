@@ -25,21 +25,34 @@ sub new($$$;$)
 
 # === Instance methods ===
 
-sub getFormula()
+sub formula()
 {
   my $self = shift();
 
   return $self->{p}->{f};
 }
 
-sub getFgColor()
+sub formatString()
+{
+  my $self = shift();
+
+  (!defined($self->{p}->{xf})) && return undef;  # No direct style
+
+  my $xf = $self->{ctx}->()->workbook()->getXf($self->{p}->{xf});
+  (!defined($xf->{numberFormatId})) && return undef;  # No number format applied
+
+  my $numberFormat = $self->{ctx}->()->workbook()->getNumberFormat($xf->{numberFormatId});
+  return $numberFormat;
+}
+
+sub fgColor()
 {
   my $self = shift();
 
   return $self->getFillColor('fgColor');
 }
 
-sub getBgColor()
+sub bgColor()
 {
   my $self = shift();
 
@@ -54,12 +67,15 @@ sub getFillColor($)
   (!defined($self->{p}->{xf})) && return undef;  # No direct style
 
   my $xf = $self->{ctx}->()->workbook()->getXf($self->{p}->{xf});
-  (!defined($xf->{fillId})) && return undef;  # No fill info
+  (!defined($xf->{fillId})) && return undef;  # No fill applied
 
   my $fill = $self->{ctx}->()->workbook()->getFill($xf->{fillId});
-  (!defined($fill->{bgColor})) && return undef;  # No fill background colour
+  (!defined($fill)) && return undef;  # No such fill
 
-  return $self->{ctx}->()->workbook()->resolveColor($fill->{bgColor});
+  my $color = $fill->{$name};
+  (!defined($color)) && return undef;  # No colour by that name
+
+  return $self->{ctx}->()->workbook()->resolveColor($color);
 }
 
 1;

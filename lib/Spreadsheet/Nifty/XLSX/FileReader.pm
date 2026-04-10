@@ -95,7 +95,7 @@ sub read()
   # Read styles
   $self->{debug} && printf("readStyles\n");
   $self->readStyles();
-  $self->{debug} && print main::Dumper($self->{numberFormats});
+  $self->{debug} && print main::Dumper($self->{styles}->{numberFormats});
 
   $self->{debug} && printf("reading workbook complete\n");
   return 1;
@@ -127,7 +127,7 @@ sub resolveColor($)
   # <fgColor indexed="64"/>
   if (defined($c->{indexed}))
   {
-    return $self->{indexedColors}->getColor($c->{indexed});
+    return $self->{styles}->{indexedColors}->getColor($c->{indexed});
   }
 
   # TODO: <fgColor theme="0"/>
@@ -150,6 +150,14 @@ sub getFill($)
   my ($i) = @_;
 
   return $self->{styles}->{fills}->[$i];
+}
+
+sub getNumberFormat($)
+{
+  my $self = shift();
+  my ($i) = @_;
+
+  return $self->{styles}->{numberFormats}->{$i};
 }
 
 sub readSharedStrings()

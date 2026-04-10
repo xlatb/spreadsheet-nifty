@@ -14,6 +14,18 @@ use constant
   TYPE_DATE => 0x5,
 };
 
+# Maps type number to name
+# NOTE: Don't use => here because it will stringify the LHS.
+my $typeNames =
+{
+  TYPE_NULL , 'NULL',
+  TYPE_NUM  , 'NUM',
+  TYPE_STR  , 'STR',
+  TYPE_BOOL , 'BOOL',
+  TYPE_ERR  , 'ERR',
+  TYPE_DATE , 'DATE',
+};
+
 # The numeric value corresponds to the return from the ERROR.TYPE() function.
 my $errorNamesToNumbers =
 {
@@ -30,13 +42,21 @@ my $errorNumbersToNames;
 
 my $readers =
 [
-  {ext => qr#[.]xls$#i,     class => 'Spreadsheet::Nifty::XLS::FileReader'},
-  {ext => qr#[.]xls[xm]$#i, class => 'Spreadsheet::Nifty::XLSX::FileReader'},
-  {ext => qr#[.]xlsb$#i,    class => 'Spreadsheet::Nifty::XLSB::FileReader'},
-  {ext => qr#[.]ods$#i,     class => 'Spreadsheet::Nifty::ODS::FileReader'},
+  {name => 'XLS',  ext => qr#[.]xls$#i,     class => 'Spreadsheet::Nifty::XLS::FileReader'},
+  {name => 'XLSX', ext => qr#[.]xls[xm]$#i, class => 'Spreadsheet::Nifty::XLSX::FileReader'},
+  {name => 'XLSB', ext => qr#[.]xlsb$#i,    class => 'Spreadsheet::Nifty::XLSB::FileReader'},
+  {name => 'ODS',  ext => qr#[.]ods$#i,     class => 'Spreadsheet::Nifty::ODS::FileReader'},
 ];
 
 # === Class methods ===
+
+sub typeName($)
+{
+  my $class = shift();
+  my ($type) = @_;
+
+  return $typeNames->{$type};
+}
 
 sub errorName($)
 {
