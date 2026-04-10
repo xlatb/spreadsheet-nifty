@@ -77,7 +77,7 @@ sub buildCell($)
   my $type = $data->{type};
   my $value = $data->{value};
 
-  my $private = {ctx => $self->{reader}};
+  my $private = {};
 
   if (defined($data->{formula}))
   {
@@ -93,30 +93,30 @@ sub buildCell($)
   {
     if (!defined($value))
     {
-      return Spreadsheet::Nifty::XLSX::Cell->new(Spreadsheet::Nifty::TYPE_NULL, undef, $private);
+      return Spreadsheet::Nifty::XLSX::Cell->new(Spreadsheet::Nifty::TYPE_NULL, undef, $self->{reader}, $private);
     }
 
-    return Spreadsheet::Nifty::XLSX::Cell->new(Spreadsheet::Nifty::TYPE_NUM, $value, $private);
+    return Spreadsheet::Nifty::XLSX::Cell->new(Spreadsheet::Nifty::TYPE_NUM, $value, $self->{reader}, $private);
   }
   elsif ($type eq 'inlineStr')  # Inline string
   {
-    return Spreadsheet::Nifty::XLSX::Cell->new(Spreadsheet::Nifty::TYPE_STR, $value, $private);
+    return Spreadsheet::Nifty::XLSX::Cell->new(Spreadsheet::Nifty::TYPE_STR, $value, $self->{reader}, $private);
   }
   elsif ($type eq 's')  # Shared string
   {
-    return Spreadsheet::Nifty::XLSX::Cell->new(Spreadsheet::Nifty::TYPE_STR, $self->{reader}->{workbook}->getSharedString($data->{stringIndex}), $private);
+    return Spreadsheet::Nifty::XLSX::Cell->new(Spreadsheet::Nifty::TYPE_STR, $self->{reader}->{workbook}->getSharedString($data->{stringIndex}), $self->{reader}, $private);
   }
   elsif ($type eq 'str')  # Formula whose returned value is a string
   {
-    return Spreadsheet::Nifty::XLSX::Cell->new(Spreadsheet::Nifty::TYPE_STR, $value, $private);
+    return Spreadsheet::Nifty::XLSX::Cell->new(Spreadsheet::Nifty::TYPE_STR, $value, $self->{reader}, $private);
   }
   elsif ($type eq 'b')
   {
-    return Spreadsheet::Nifty::XLSX::Cell->new(Spreadsheet::Nifty::TYPE_BOOL, $value, $private);
+    return Spreadsheet::Nifty::XLSX::Cell->new(Spreadsheet::Nifty::TYPE_BOOL, $value, $self->{reader}, $private);
   }
   elsif ($type eq 'e')
   {
-    return Spreadsheet::Nifty::XLSX::Cell->new(Spreadsheet::Nifty::TYPE_ERR, Spreadsheet::Nifty->errorNumber($value), $private);
+    return Spreadsheet::Nifty::XLSX::Cell->new(Spreadsheet::Nifty::TYPE_ERR, Spreadsheet::Nifty->errorNumber($value), $self->{reader}, $private);
   }
 
   die("Unhandled cell type '$type'");

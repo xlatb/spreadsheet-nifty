@@ -2,6 +2,8 @@
 use warnings;
 use strict;
 
+use Scalar::Util qw();
+
 package Spreadsheet::Nifty::XLSX::Cell;
 use parent 'Spreadsheet::Nifty::Cell';
 
@@ -10,10 +12,13 @@ use parent 'Spreadsheet::Nifty::Cell';
 sub new($$$;$)
 {
   my $class = shift();
-  my ($type, $value, $private) = @_;
+  my ($type, $value, $ctx, $private) = @_;
 
   my $self = $class->SUPER::new($type, $value);
   $self->{p} = $private // {};
+  $self->{ctx} = sub { return $ctx; };  # Closure around context
+
+  Scalar::Util::weaken($ctx);
 
   return $self;
 }
@@ -48,13 +53,13 @@ sub getFillColor($)
 
   (!defined($self->{p}->{xf})) && return undef;  # No direct style
 
-  my $xf = $self->{p}->{ctx}->workbook()->getXf($self->{p}->{xf});
+  my $xf = $self->{ctx}->()->workbook()->getXf($self->{p}->{xf});
   (!defined($xf->{fillId})) && return undef;  # No fill info
 
-  my $fill = $self->{p}->{ctx}->workbook()->getFill($xf->{fillId});
+  my $fill = $self->{ctx}->()->workbook()->getFill($xf->{fillId});
   (!defined($fill->{bgColor})) && return undef;  # No fill background colour
 
-  return $self->{p}->{ctx}->workbook()->resolveColor($fill->{bgColor});
+  return $self->{ctx}->()->workbook()->resolveColor($fill->{bgColor});
 }
 
 1;
