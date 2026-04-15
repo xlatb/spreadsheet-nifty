@@ -11,6 +11,7 @@ use Spreadsheet::Nifty::XLSB::RecordReader;
 use Spreadsheet::Nifty::XLSB::RecordTypes;
 use Spreadsheet::Nifty::XLSB::SheetReader;
 use Spreadsheet::Nifty::XLSB::Sheet;
+use Spreadsheet::Nifty::XLSB::Styles;
 use Spreadsheet::Nifty::XLSB::Decode;
 use Spreadsheet::Nifty::StructDecoder;
 use Spreadsheet::Nifty::ZIPPackage;
@@ -29,6 +30,7 @@ sub new()
   $self->{workbook}      = undef;
   $self->{relationships} = undef;
   $self->{sharedStrings} = undef;
+  $self->{styles}        = undef;
 #  $self->{worksheets}    = undef;
   
   bless($self, $class);
@@ -81,6 +83,9 @@ sub read()
 
   ($self->{debug}) && printf("FileReader readSharedStrings\n");
   $self->readSharedStrings();
+
+  ($self->{debug}) && printf("FileReader readStyles\n");
+  $self->readStyles();
   
   #($self->{debug}) && printf("FileReader readStyles\n");
   #$self->readStyles();
@@ -123,6 +128,23 @@ sub readSharedStrings()
     }
   }
   
+  return;
+}
+
+sub readStyles()
+{
+  my $self = shift();
+
+  # Find workbook's styles relationship
+  my $rel = $self->{zipPackage}->getRelationshipByType($self->{workbook}->{relationships}, $Spreadsheet::Nifty::ZIPPackage::namespaces->{styles});
+  (!defined($rel)) && return 0;
+
+  my $reader = $self->{zipPackage}->openMember($rel->{partname});
+  (!$reader) && die("Couldn't open member '$rel->{partname}'\n");
+
+  $self->{styles} = Spreadsheet::Nifty::XLSB::Styles->new();
+  $self->{styles}->read($reader);
+
   return;
 }
 

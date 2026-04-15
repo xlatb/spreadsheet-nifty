@@ -131,6 +131,16 @@ sub decodeFieldInternal($;$)
     my $v = unpack('Q<', $self->getBytes(8));
     return $v;
   }
+  elsif ($type eq 'i16')
+  {
+    my $v = unpack('s<', $self->getBytes(2));
+    return $v;
+  }
+  elsif ($type eq 'i32')
+  {
+    my $v = unpack('l<', $self->getBytes(4));
+    return $v;
+  }
   elsif ($type eq 'f32')
   {
     my $v = unpack('f<', $self->getBytes(4));

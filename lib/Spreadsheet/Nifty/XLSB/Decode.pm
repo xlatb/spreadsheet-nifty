@@ -16,6 +16,9 @@ sub decoder()
   my $decoder = StructDecoder->new(@_);
   $decoder->registerType('XLWideString', \&decodeXLWideString);
   $decoder->registerType('XLNullableWideString', \&decodeXLNullableWideString);
+  $decoder->registerType('BrtColor', \&decodeBrtColor);
+  $decoder->registerType('BrtXF', \&decodeBrtXF);
+  $decoder->registerType('Blxf', \&decodeBlxf);
   return $decoder;
 }
 
@@ -43,6 +46,27 @@ sub decodeXLNullableWideString()
 
   my $str = Encode::decode('UTF-16LE', $payload);
   return $str;
+}
+
+sub decodeBrtColor()
+{
+  my $decoder = shift();
+
+  return $decoder->decodeHash(['type:u8', 'index:u8', 'tint:i16', 'red:u8', 'green:u8', 'blue:u8', 'alpha:u8']);
+}
+
+sub decodeBrtXF()
+{
+  my $decoder = shift();
+
+  return $decoder->decodeHash(['parentStyle:u16', 'numberFormatId:u16', 'fontId:u16', 'fillId:u16', 'borderId:u16', 'textRotation:u8', 'indent:u8', 'flags:u32']);
+}
+
+sub decodeBlxf()
+{
+  my $decoder = shift();
+
+  return $decoder->decodeHash(['type:u8', ':u8', 'color:BrtColor']);
 }
 
 1;
