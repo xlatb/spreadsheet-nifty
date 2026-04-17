@@ -103,8 +103,7 @@ sub seekFollowingRowByOffset($)
 
   $self->{rowHeader} = undef;
 
-  $self->{records}->rewind();
-  $self->{records}->readBytes($offset);
+  $self->{records}->seek($offset);
 
   $self->readRowHeader();
   return;
@@ -322,10 +321,13 @@ sub readRowInternal()
 
   my $row = [];
 
-  my $offset = $self->{records}->tell();
-  while (my $rec = $self->{records}->read())
+  while (1)
   {
-    ($self->{debug}) && printf("SheetReader readRowInternal(): REC type %d size %d name %s\n", $rec->{type}, $rec->{size}, $rec->{name} // '?');
+    my $offset = $self->{records}->tell();
+    my $rec = $self->{records}->read();
+    (!defined($rec)) && last;  # No more records
+
+    ($self->{debug}) && printf("SheetReader readRowInternal(): offset %ld  REC type %d  size %d  name %s\n", $offset, $rec->{type}, $rec->{size}, $rec->{name} // '?');
     ($self->{debug}) && ($rec->{size}) && printf("  data: %s\n", unpack('H*', $rec->{data}));
 
     if ($rec->{name} eq 'BrtRowHdr')
@@ -349,8 +351,6 @@ sub readRowInternal()
       (!defined($cell->{column})) && die("Returned cell with no column?");
       $row->[$cell->{column}] = $cell;
     }
-
-    $offset = $self->{records}->tell();
   }
 
   return $row;
@@ -361,6 +361,62 @@ sub tellRow()
   my $self = shift();
 
   return $self->{rowIndex};
+}
+
+sub seekRow($)
+{
+  my $self = shift();
+  my ($rowIndex) = @_;
+
+  ($self->{debug}) && printf("seekRow() to rowIndex %d\n", $rowIndex);
+
+  # Trivial case
+  if ($self->{rowIndex} == $rowIndex)
+  {
+    ($self->{debug}) && printf("  seekRow(): Already at target row.\n");
+    return;
+  }
+
+  # If the target row is "close" in front of us, it's probably more efficient
+  #  to just skip forward rather than repositioning with the index.
+  use constant CLOSE_SEEK_ROW_COUNT => 128;
+
+  # Ensure our position is somewhere before the target row
+  if (defined($self->{rowHeader}) &&
+      defined($self->{rowHeader}->{data}->{row}) &&
+      ($rowIndex >= $self->{rowHeader}->{data}->{row}) &&
+      ($rowIndex < ($self->{rowHeader}->{data}->{row} + CLOSE_SEEK_ROW_COUNT)))
+  {
+    # Target row is ahead of us and "close", so don't bother with binary index
+    ($self->{debug}) && printf("  seekRow(): Target row is ahead and close\n");
+  }
+  elsif (defined($self->{binaryIndex}) && defined(my $block = $self->{binaryIndex}->getBlockByRowIndex($rowIndex)))
+  {
+    # We have a binary index with a block covering this row, so try to use it to position ourselves before the row
+    ($self->{debug}) && printf("  seekRow(): Skipping to start of binary index block, row %d offset %ld\n", $block->{minRow}, $block->{offset});
+    $self->seekFollowingRowByOffset($block->{offset});
+  }
+  elsif (defined($self->{rowHeader}) && (!defined($self->{rowHeader}->{data}->{row}) || ($self->{rowHeader}->{data}->{row} > $rowIndex)))
+  {
+    # Seek back to the beginning
+    ($self->{debug}) && printf("  seekRow(): No binary index block, using rewind\n");
+    $self->readInitial();
+  }
+
+  (!defined($self->{rowHeader})) && die("No row header?");
+
+  # Read forwards until we have a row at or after our target row
+  my $skipCount = 0;
+  while (($self->{rowHeader}->{type} ne 'BrtEndSheetData') && ($self->{rowHeader}->{data}->{row} < $rowIndex))
+  {
+    (!$self->skipRow()) && last;
+    $skipCount++;
+  }
+
+  $self->{rowIndex} = $rowIndex;
+  ($self->{debug}) && printf("  Seeked to row %d, skipCount was %d, next row header %d\n", $rowIndex, $skipCount, $self->{rowHeader}->{data}->{row});
+
+  return;
 }
 
 # Skip forward to the next row that contains data.

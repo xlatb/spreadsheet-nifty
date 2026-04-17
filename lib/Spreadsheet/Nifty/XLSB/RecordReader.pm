@@ -4,6 +4,8 @@ use strict;
 
 package Spreadsheet::Nifty::XLSB::RecordReader;
 
+use Spreadsheet::Nifty::XLSB::RecordTypes;
+
 # === Class methods ===
 
 sub new()
@@ -59,7 +61,7 @@ sub readBytes($)
   return $buf;
 }
 
-sub read($)
+sub read()
 {
   my $self = shift();
 
@@ -90,6 +92,31 @@ sub tell()
   my $self = shift();
 
   return $self->{reader}->tell();
+}
+
+sub seek($)
+{
+  my $self = shift();
+  my ($offset) = @_;
+
+  $self->{reader}->rewind();
+
+  # Read in 64KiB chunks
+  use constant MAX_CHUNK_SIZE => 65536;
+
+  my $remaining = $offset;
+  while ($remaining > 0)
+  {
+    my $buf;
+    my $chunkSize = ($remaining >= MAX_CHUNK_SIZE) ? MAX_CHUNK_SIZE : $remaining;
+    my $count = $self->{reader}->read($buf, $chunkSize);
+    (!defined($count)) && die("RecordReader->seek(): Error reading chunk: $!");
+    ($count == 0) && die("RecordReader->seek(): Unexpected EOF");
+
+    $remaining -= $count;
+  }
+
+  return;
 }
 
 1;

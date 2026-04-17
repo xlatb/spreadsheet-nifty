@@ -24,6 +24,14 @@ sub new()
 
 # === Instance methods ===
 
+sub seekRow($)
+{
+  my $self = shift();
+  my ($rowIndex) = @_;
+
+  return $self->{sheetReader}->seekRow($rowIndex);
+}
+
 sub tellRow()
 {
   my $self = shift();

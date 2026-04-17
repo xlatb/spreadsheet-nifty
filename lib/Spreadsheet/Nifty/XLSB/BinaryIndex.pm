@@ -78,6 +78,7 @@ sub read($)
 
       # Read indices for the start of each column span
       my $indices = [];
+      my $maxIndex = undef;
       for (my $r = 0; $r < $block->{count}; $r++)
       {
         if ($brtIndexRowBlock->{rowMask} & (0x01 << $r))
@@ -92,11 +93,14 @@ sub read($)
               $indices->[$r]->[$s] = $decoder->decodeField('u32');
             }
           }
+
+          $maxIndex = $r;
         }
       }
 
       $block->{offset}  = $brtIndexRowBlock->{offset};
       $block->{indices} = $indices;
+      $block->{maxIndex} = $maxIndex;
       push(@{$self->{blocks}}, $block);
       $block = undef;
     }
@@ -120,6 +124,67 @@ sub getFinalOffset()
   my $blockOffset = $self->{blocks}->[-1]->{offset};
   my $spanOffset = $self->{blocks}->[-1]->{indices}->[-1]->[-1];
   return $blockOffset + $spanOffset;
+}
+
+sub getRowCount()
+{
+  my $self = shift();
+
+  (scalar(@{$self->{blocks}}) == 0) && return 0;  # No blocks means no rows
+
+  # NOTE: The nextRow field is actually the lowest possible starting row index
+  #  of the following block, so it could be beyond the end of the sheet.
+  #return $self->{blocks}->[-1]->{nextRow};
+
+  my $finalBlock = $self->{blocks}->[-1];
+  (!defined($finalBlock->{maxIndex})) && die("Block contains no populated rows?");
+  my $rowIndex = $finalBlock->{minRow} + $finalBlock->{maxIndex};
+
+  return $rowIndex + 1;
+}
+
+# Returns the index block for a given row index.
+# If no such block exists in the index, returns undef.
+sub getBlockByRowIndex($)
+{
+  my $self = shift();
+  my ($targetRow) = @_;
+
+  my $blockCount = scalar(@{$self->{blocks}});
+  #printf("getBlockByRowIndex(): blockCount %d  targetRow %d\n", $blockCount, $targetRow);
+
+  # Don't bother with search if row index is out of range
+  (($targetRow < 0) || ($targetRow > $self->{blocks}->[-1]->{nextRow})) && return undef;
+
+  # Binary search to find the block
+  my $low = 0;
+  my $high = $blockCount;
+  do
+  {
+    my $i = ($low + $high) >> 1;
+
+    my $b = $self->{blocks}->[$i];
+    #printf("  low %d  high %d  i %d  minRow %d\n", $low, $high, $i, $b->{minRow});
+
+    if ($b->{minRow} <= $targetRow)
+    {
+      if ($b->{nextRow} > $targetRow)
+      {
+        #printf("    Found\n");
+        return $b;
+      }
+      else
+      {
+        $low = $i + 1;
+      }
+    }
+    else
+    {
+      $high = $i - 1;
+    }
+  } while ($low <= $high);
+
+  return undef;  # Not found
 }
 
 1;
