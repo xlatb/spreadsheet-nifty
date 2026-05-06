@@ -4,6 +4,7 @@ use strict;
 
 package Spreadsheet::Nifty::ODS::Sheet;
 use Spreadsheet::Nifty::ODS::Cell;
+use Spreadsheet::Nifty::Utils;
 
 # === Class methods ===
 
@@ -64,23 +65,30 @@ sub buildCell($)
   my $cell;
   if ($valueType eq 'void')
   {
-    $cell = Spreadsheet::Nifty::ODS::Cell->new(Spreadsheet::Nifty::TYPE_NULL);
+    $cell = Spreadsheet::Nifty::ODS::Cell->new(Spreadsheet::Nifty::TYPE_NULL, undef, $self, $cellDef);
   }
   elsif (($valueType eq 'float') || ($valueType eq 'percentage'))
   {
-    $cell = Spreadsheet::Nifty::ODS::Cell->new(Spreadsheet::Nifty::TYPE_NUM, $cellDef->{value});
+    $cell = Spreadsheet::Nifty::ODS::Cell->new(Spreadsheet::Nifty::TYPE_NUM, $cellDef->{value}, $self, $cellDef);
   }
   elsif ($valueType eq 'string')
   {
-    $cell = Spreadsheet::Nifty::ODS::Cell->new(Spreadsheet::Nifty::TYPE_STR, $cellDef->{value});
+    $cell = Spreadsheet::Nifty::ODS::Cell->new(Spreadsheet::Nifty::TYPE_STR, $cellDef->{value}, $self, $cellDef);
   }
-#  elsif ($cellDef->{valueType} eq 'boolean')
-#  {
-#    $cell = Spreadsheet::Nifty::Cell->new(Spreadsheet::Nifty::TYPE_BOOL, $cellDef->{value});
-#  }
+  elsif ($cellDef->{valueType} eq 'boolean')
+  {
+    $cell = Spreadsheet::Nifty::Cell->new(Spreadsheet::Nifty::TYPE_BOOL, Spreadsheet::Nifty::ODS::Decode->decodeBoolean($cellDef->{value}), $self, $cellDef);
+  }
+  elsif ($valueType eq 'date')
+  {
+    my $struct = Spreadsheet::Nifty::ODS::Decode->decodeDateString($cellDef->{value});
+    my $value = Spreadsheet::Nifty::Utils->structToExcelTime($struct);
+    $cell = Spreadsheet::Nifty::ODS::Cell->new(Spreadsheet::Nifty::TYPE_DATE, $value, $self, $cellDef);
+  }
   else
   {
-    print main::Dumper($cellDef);
+    use Data::Dumper;
+    print Dumper($cellDef);
     die("Unimplemented valueType '$cellDef->{valueType}'");
     ...;
   }
@@ -130,8 +138,7 @@ sub seekRow($)
   my $self = shift();
   my ($rowIndex) = @_;
 
-  $self->{rowIndex} = $rowIndex;
-  return;
+  return $self->{sheetReader}->seekRow($rowIndex);
 }
 
 sub tellRow()

@@ -50,6 +50,22 @@ sub open()
   return $self->readInitial();
 }
 
+sub rewind()
+{
+  my $self = shift();
+
+  my $xmlReader = $self->{workbook}->xmlReaderForSheet($self->{sheetIndex});
+  (!defined($xmlReader)) && return !!0;
+
+  $self->{xmlReader}  = $xmlReader;
+  $self->{rowIndex}   = 0;
+  $self->{currentRow} = undef;
+  $self->{columnDefs} = undef;
+  $self->{rowDefs}    = undef;
+
+  return $self->readInitial();
+}
+
 # Read until the first <table:table-row/> is seen.
 sub readInitial()
 {
@@ -199,12 +215,31 @@ sub readRow()
   return $cellDefs;
 }
 
+# Seek to the given row. Returns true on success.
 sub seekRow($)
 {
   my $self = shift();
   my ($rowIndex) = @_;
 
-  ...;  # TODO
+  # Reject out-of-range requests
+  ($rowIndex < 0) && return !!0;
+  ($rowIndex >= $self->{rowCount}) && return !!0;
+
+  # If the target row is behind us, we need to rewind
+  if ($rowIndex < $self->{rowIndex})
+  {
+    (!$self->rewind()) && return !!0;
+  }
+
+  # Read rows until we reach the target row.
+  while ($self->{rowIndex} < $rowIndex)
+  {
+    (!defined($self->readRow())) && return !!0;
+  }
+
+  ($rowIndex != $self->{rowIndex}) && die("seekRow(): Never reached target row $rowIndex");
+
+  return !!1; # Success
 }
 
 sub tellRow()

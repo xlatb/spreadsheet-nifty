@@ -8,6 +8,24 @@ use Spreadsheet::Nifty::ODS;
 
 use XML::LibXML qw(:libxml);
 
+sub decodeBoolean($)
+{
+  my $class = shift();
+  my ($str) = @_;
+
+  # https://www.w3.org/TR/xmlschema-2/#boolean
+  if (($str eq 'true') || ($str eq '1'))
+  {
+    return !!1;
+  }
+  elsif (($str eq 'false') || ($str eq '0'))
+  {
+    return !!0;
+  }
+
+  return undef;
+}
+
 sub decodeDateString($)
 {
   my $class = shift();
@@ -23,6 +41,7 @@ sub decodeDateString($)
     my $minute = int($5);
     my $second = int($6);
     my $tz     = $7;
+    return {year => $year, month => $month, day => $day, hour => $hour, minute => $minute, second => $second, tz => $tz};
   }
   # https://www.w3.org/TR/xmlschema-2/#date
   elsif ($str =~ m#^(-?\d{4,})-(\d{2})-(\d{2})(Z|[+-]\d{2}:\d{2})?$#)
@@ -31,6 +50,7 @@ sub decodeDateString($)
     my $month = int($2);
     my $day   = int($3);
     my $tz    = $4;
+    return {year => $year, month => $month, day => $day, tz => $tz};
   }
 
   return undef;
@@ -178,6 +198,7 @@ sub decodeCellDefinition($)
   my $tablens  = $Spreadsheet::Nifty::ODS::namespaces->{table};
   my $officens = $Spreadsheet::Nifty::ODS::namespaces->{office};
 
+  my $formula = $node->getAttributeNS($officens, 'formula');
   my $valueType = $node->getAttributeNS($officens, 'value-type') // 'void';
 
   my $text;

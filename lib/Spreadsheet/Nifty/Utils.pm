@@ -3,11 +3,18 @@ use warnings;
 use strict;
 
 package Spreadsheet::Nifty::Utils;
+use Spreadsheet::Nifty::DateUtils;
 
 use POSIX qw();
 
 # POSIX epoch 1970-01-01 as an Excel day number, measured from different base years.
 my $timeEpochs = { 1900 => 25569, 1904 => 24107 };
+
+# First day of the year for each base year.
+# NOTE: In the 1900 system, we start the year on day 2 because Excel starts it
+#  on day 1, but we follow the LibreOffice convention of moving the epoch one
+#  day earlier to work around the old 1900 leap year bug.
+my $timeStartOfYear = { 1900 => 2, 1904 => 0};
 
 # Converts a POSIX timestamp (interpreted as UTC), to an Excel time value.
 sub posixToExcelTime($;$)
@@ -35,6 +42,42 @@ sub excelToPosixTime($;$)
   #  negative values, so we use POSIX::floor() instead.
   my $time = POSIX::floor((($excel - $epoch) * (3600 * 24)) + 0.5);
   return $time;
+}
+
+sub structToExcelTime($;$)
+{
+  my $class = shift();
+  my ($struct, $baseyear) = @_;
+
+  my $year = $baseyear // 1900;
+  my $excel = $timeStartOfYear->{$year};
+  (!defined($excel)) && die("Unexpected base year");
+
+  # March by year
+  if ($struct->{year} > $year)
+  {
+    while ($year < $struct->{year})
+    {
+      $excel += Spreadsheet::Nifty::DateUtils->daysInYear($year++);
+    }
+  }
+  else
+  {
+    while ($year > $struct->{year})
+    {
+      $excel -= Spreadsheet::Nifty::DateUtils->daysInYear(--$year);
+    }
+  }
+
+  # Add day of year
+  $excel += Spreadsheet::Nifty::DateUtils->dayOfYear($struct->{year}, $struct->{month}, $struct->{day});
+
+  # Add time of day
+  $excel += (($struct->{hour} // 0) * (1.0 / 24.0)) +
+            (($struct->{minute} // 0) * (1.0 / 24.0 / 60.0)) +
+            (($struct->{second} // 0) * (1.0 / 24.0 / 60.0 / 60.0));
+
+  return $excel;
 }
 
 # All inputs are integers. Sign should be one for negative and zero for positive.

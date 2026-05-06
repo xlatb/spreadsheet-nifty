@@ -41,6 +41,7 @@ sub isFileSupported($)
   (!$odf->open($filename)) && return 0;
 
   my $mimetype = $odf->readMimetype();
+  (!defined($mimetype)) && return 0;  # No ODF MIME type present
   (scalar(grep({ $mimetype eq $_ } @{$Spreadsheet::Nifty::ODS::mimetypes})) == 0) && return 0;  # Unexpected MIME type
 
   return 1;
@@ -354,9 +355,6 @@ sub openSheet($)
   my ($index) = @_;
 
   (($index < 0) || ($index >= scalar(@{$self->{workbook}->{sheets}}))) && return undef;  # Out of bounds
-
-  ##my $xmlReader = $self->xmlReaderForSheet($index);
-  ##(!defined($xmlReader)) && return undef;
 
   my $sheet = Spreadsheet::Nifty::ODS::Sheet->new($self, $index);
   (!$sheet->open()) && return undef;  # Failed to open

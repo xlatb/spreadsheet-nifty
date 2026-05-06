@@ -132,6 +132,8 @@ sub readMimetype()
 {
   my $self = shift();
 
+  (!$self->{zip}->memberNamed('mimetype')) && return undef;  # Must not be an OpenDocument file
+
   my $mimetype = $self->{zip}->contents('mimetype');
 
   return $mimetype;

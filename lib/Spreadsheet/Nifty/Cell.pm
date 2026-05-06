@@ -62,7 +62,7 @@ sub stringValue()
   }
   elsif ($t == Spreadsheet::Nifty::TYPE_DATE)
   {
-    ...;
+    return $self->{v};
   }
   else
   {
