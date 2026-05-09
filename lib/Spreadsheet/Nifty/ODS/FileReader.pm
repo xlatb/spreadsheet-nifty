@@ -9,6 +9,7 @@ use Spreadsheet::Nifty::XMLReaderUtils;
 use Spreadsheet::Nifty::ODS;
 use Spreadsheet::Nifty::ODS::Sheet;
 use Spreadsheet::Nifty::ODS::SheetReader;
+use Spreadsheet::Nifty::ODS::Styles;
 
 use XML::LibXML qw(:libxml);
 use XML::LibXML::Reader;
@@ -25,6 +26,7 @@ sub new()
   $self->{manifest} = undef;
   $self->{workbook} = {};
   $self->{parked}   = [];
+  $self->{styles}   = {auto => undef};
   $self->{debug}    = 0;
   
   bless($self, $class);
@@ -67,22 +69,98 @@ sub read()
   ($self->{debug}) && printf("read manifest\n");
   $self->{manifest} = $self->{odf}->readManifest();
 
+  # Read styles member
+  ($self->{debug}) && printf("readStylesMember\n");
+  $self->readStylesMember();
+
   # Read workbook
   ($self->{debug}) && printf("readWorkbook\n");
   $self->readWorkbook();
-
-#  ($self->{debug}) && printf("readStyles\n");
-#  $self->readStyles();
 
   ($self->{debug}) && printf("reading complete\n");
   return 1;
 }
 
-sub readStyles($)
+# Checks the manifest for a member with the given MIME type. If not found, we
+#  call optionally fall back to a member with a specific name. Returns the
+#  path of the member.
+sub findMemberPathname($;$)
+{
+  my $self = shift();
+  my ($mimetype, $fallback) = @_;
+
+  if (defined($self->{manifest}) && defined($self->{manifest}->{entries}))
+  {
+    for my $e (@{$self->{manifest}->{entries}})
+    {
+      if (($e->{mimetype} eq $mimetype) && $self->{odf}->hasMember($e->{path}))
+      {
+        return $e->{path};
+      }
+    }
+  }
+
+  if (defined($fallback) && $self->{odf}->hasMember($fallback))
+  {
+    return $fallback;
+  }
+
+  return undef;
+}
+
+# This reads the styles member from the ODF, usually called styles.xml.
+# This is where you'll find named styles, but it can also contain automatic
+#  styles.
+# Other automatic styles can exist within the content.xml member.
+sub readStylesMember($)
 {
   my $self = shift();
 
-  ...;  
+  my $officeNS = $Spreadsheet::Nifty::ODS::namespaces->{office};
+
+  my $pathname = $self->findMemberPathname('application/vnd.oasis.opendocument.styles', 'styles.xml');
+  (!defined($pathname)) && return !!0;  # Couldn't find ODS styles member
+
+  my $zipReader = $self->{odf}->openMember($pathname);
+  (!$zipReader) && die("Couldn't open styles member '$pathname'\n");
+
+  my $xmlReader = XML::LibXML::Reader->new({IO => $zipReader});
+
+  my $status = $xmlReader->read();
+  ($status != 1) && return !!0;
+
+  # Check root element
+  ($xmlReader->namespaceURI() ne $officeNS) && return !!0;
+  ($xmlReader->localName() ne 'document-styles') && return !!0;
+
+  # Children of root should be: <office:font-face-decls/>, <office:styles/>, <office:master-styles/>, <office:automatic-styles/>
+  while (($status = $xmlReader->read()) == 1)
+  {
+    ($xmlReader->nodeType() != XML_READER_TYPE_ELEMENT) && next;
+    ($xmlReader->namespaceURI() ne $officeNS) && next;
+
+    #printf("readStylesMember() depth %d empty %d nodeType %d localname %s\n", $xmlReader->depth(), $xmlReader->isEmptyElement(), $xmlReader->nodeType(), $xmlReader->localName());
+
+    my $localName = $xmlReader->localName();
+    if ($localName eq 'automatic-styles')
+    {
+      $self->{styles}->{'styles.auto'} = Spreadsheet::Nifty::ODS::Styles->new();
+      $self->{styles}->{'styles.auto'}->read($xmlReader);
+
+      (!Spreadsheet::Nifty::XMLReaderUtils->atEndOfElement($xmlReader, 'automatic-styles', $officeNS)) && die("Misaligned after reading automatic styles");
+    }
+    elsif ($localName eq 'styles')
+    {
+      $self->{styles}->{'styles.named'} = Spreadsheet::Nifty::ODS::Styles->new();
+      $self->{styles}->{'styles.named'}->read($xmlReader);
+
+      (!Spreadsheet::Nifty::XMLReaderUtils->atEndOfElement($xmlReader, 'styles', $officeNS)) && die("Misaligned after reading named styles");
+    }
+
+    Spreadsheet::Nifty::XMLReaderUtils->skipElement($xmlReader);  # Skip all children
+  }
+
+  return !!1;
 }
 
 sub readWorkbook()
@@ -91,8 +169,11 @@ sub readWorkbook()
 
   my $xmlns = $Spreadsheet::Nifty::ODS::namespaces->{office};
 
-  my $zipReader = $self->{odf}->openMember('content.xml');
-  (!$zipReader) && die("Couldn't open member 'content.xml'\n");
+  my $pathname = $self->findMemberPathname('application/vnd.oasis.opendocument.content', 'content.xml');
+  (!defined($pathname)) && die("Couldn't find ODS content member\n");
+
+  my $zipReader = $self->{odf}->openMember($pathname);
+  (!$zipReader) && die("Couldn't open content member '$pathname'\n");
 
   my $xmlReader = XML::LibXML::Reader->new({IO => $zipReader});
 
@@ -112,7 +193,15 @@ sub readWorkbook()
     ($xmlReader->namespaceURI() ne $xmlns) && next;
 
     my $localName = $xmlReader->localName();
-    if ($localName eq 'body')
+    if ($localName eq 'automatic-styles')
+    {
+      $self->{styles}->{'content.auto'} = Spreadsheet::Nifty::ODS::Styles->new();
+
+      $self->{styles}->{'content.auto'}->read($xmlReader);
+
+      (!Spreadsheet::Nifty::XMLReaderUtils->atEndOfElement($xmlReader, 'automatic-styles', $xmlns)) && die("Misaligned after reading automatic styles");
+    }
+    elsif ($localName eq 'body')
     {
       # Should contain a single child: <office:spreadsheet/>
       (!Spreadsheet::Nifty::XMLReaderUtils->findChildElement($xmlReader, 'spreadsheet', $xmlns)) && die("expected <office:spreadsheet/> inside <office:body/>");

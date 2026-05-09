@@ -8,6 +8,25 @@ use Spreadsheet::Nifty::ODS;
 
 use XML::LibXML qw(:libxml);
 
+sub gatherAttributes($$$$)
+{
+  my $class = shift();
+  my ($target, $element, $ns, $names) = @_;
+
+  my $count = 0;
+
+  for my $name (@{$names})
+  {
+    if ($element->hasAttributeNS($ns, $name))
+    {
+      $target->{$name} = $element->getAttributeNS($ns, $name);
+      $count++;
+    }
+  }
+
+  return $count;
+}
+
 sub decodeBoolean($)
 {
   my $class = shift();
@@ -247,6 +266,285 @@ sub decodeCellDefinition($)
   }
 
   return $cellDef;
+}
+
+# Handles either <style:style/> or <style:default-style/>
+sub decodeStyle($)
+{
+  my $class = shift();
+  my ($node) = @_;
+
+  my $styleNS = $Spreadsheet::Nifty::ODS::namespaces->{style};
+  my $family = $node->getAttributeNS($styleNS, 'family');
+
+  if ($family eq 'table-cell')
+  {
+    return Spreadsheet::Nifty::ODS::Decode->decodeCellStyle($node);
+  }
+  elsif ($family eq 'table-column')
+  {
+    return Spreadsheet::Nifty::ODS::Decode->decodeColumnStyle($node);
+  }
+  elsif ($family eq 'table-row')
+  {
+    return Spreadsheet::Nifty::ODS::Decode->decodeRowStyle($node);
+  }
+  elsif ($family eq 'table')
+  {
+    return Spreadsheet::Nifty::ODS::Decode->decodeTableStyle($node);
+  }
+
+  return undef;
+}
+
+# <style:style style:name="ce1" style:family="table-cell" style:parent-style-name="xyz">
+#   <style:table-cell-properties fo:background-color="#ffffff" fo:border="0.5pt solid #000000" style:vertical-align="middle" />
+#   <style:text-properties fo:color="#333333" fo:font-weight="bold" style:font-name="arial" fo:font-size="15pt" />
+# </style:style>
+sub decodeCellStyle($)
+{
+  my $class = shift();
+  my ($node) = @_;
+
+  my $styleNS = $Spreadsheet::Nifty::ODS::namespaces->{style};
+  my $foNS = $Spreadsheet::Nifty::ODS::namespaces->{fo};
+
+  my $style = {};
+  $style->{name} = $node->getAttributeNS($styleNS, 'name');
+
+  my ($cell) = $node->getElementsByTagNameNS($styleNS, 'table-cell-properties');
+  if (defined($cell))
+  {
+    $style->{cell} = {};
+    $class->gatherAttributes($style->{cell}, $cell, $foNS, ['background-color', 'border', 'border-left', 'border-right', 'border-top', 'border-bottom', 'cell-protect']);
+    $class->gatherAttributes($style->{cell}, $cell, $styleNS, ['cell-protect']);
+  }
+
+  my ($text) = $node->getElementsByTagNameNS($styleNS, 'text-properties');
+  if (defined($text))
+  {
+    $style->{text} = {};
+    $class->gatherAttributes($style->{text}, $text, $foNS, ['color', 'font-weight', 'font-name', 'font-size']);
+  }
+
+  return $style;
+}
+
+# <style:style style:name="co1" style:family="table-column">
+#   <style:table-column-properties fo:break-before="auto" style:column-width="5.29mm" />
+# </style:style>
+sub decodeColumnStyle($)
+{
+  my $class = shift();
+  my ($node) = @_;
+
+  my $styleNS = $Spreadsheet::Nifty::ODS::namespaces->{style};
+
+  my $style = {};
+  $style->{name} = $node->getAttributeNS($styleNS, 'name');
+
+  my ($column) = $node->getElementsByTagNameNS($styleNS, 'table-column-properties');
+  if (defined($column))
+  {
+    $style->{column} = {};
+    $class->gatherAttributes($style->{column}, $column, $styleNS, ['column-width']);
+  }
+
+  return $style;
+}
+
+sub decodeRowStyle($)
+{
+  my $class = shift();
+  my ($node) = @_;
+
+  my $styleNS = $Spreadsheet::Nifty::ODS::namespaces->{style};
+  my $foNS = $Spreadsheet::Nifty::ODS::namespaces->{fo};
+
+  my $style = {};
+  $style->{name} = $node->getAttributeNS($styleNS, 'name');
+
+  my ($row) = $node->getElementsByTagNameNS($styleNS, 'table-row-properties');
+  if (defined($row))
+  {
+    $style->{row} = {};
+    $class->gatherAttributes($style->{row}, $row, $styleNS, ['row-height']);
+    $class->gatherAttributes($style->{row}, $row, $foNS, ['background-color']);
+  }
+
+  return $style;
+}
+
+sub decodeTableStyle($)
+{
+  my $class = shift();
+  my ($node) = @_;
+
+  my $styleNS = $Spreadsheet::Nifty::ODS::namespaces->{style};
+
+  my $style = {};
+  $style->{name} = $node->getAttributeNS($styleNS, 'name');
+
+  my ($table) = $node->getElementsByTagNameNS($styleNS, 'table-properties');
+  if (defined($table))
+  {
+    $style->{table} = {};
+    $class->gatherAttributes($style->{table}, $table, $Spreadsheet::Nifty::ODS::namespaces->{tableooo}, ['tab-color']);
+    $class->gatherAttributes($style->{table}, $table, $Spreadsheet::Nifty::ODS::namespaces->{loext}, ['tab-color']);
+    $class->gatherAttributes($style->{table}, $table, $Spreadsheet::Nifty::ODS::namespaces->{table}, ['display', 'tab-color']);
+    $class->gatherAttributes($style->{table}, $table, $Spreadsheet::Nifty::ODS::namespaces->{fo}, ['background-color']);
+  }
+
+  return $style;
+}
+
+# Decodes any of the following:
+# • number:number-style:
+#   <number:number-style style:name="N1">
+#     <number:number number:decimal-places="0" loext:min-decimal-places="0" number:min-integer-digits="1"/>
+#   </number:number-style>
+# • number:currency-style
+#   <number:currency-style style:name="N1">
+#     <number:currency-symbol number:language="en" number:country="CA">$</number:currency-symbol>
+#     <number:number number:decimal-places="2" loext:min-decimal-places="2" number:min-integer-digits="1" number:grouping="true"/>
+#   </number:currency-style>
+# • number:percentage-style
+#   <number:percentage-style style:name="N1">
+#     <number:number number:decimal-places="2" loext:min-decimal-places="2" number:min-integer-digits="1"/>
+#     <number:text>%</number:text>
+#   </number:percentage-style>
+# • number:date-style:
+#   <number:date-style style:name="N1" number:language="en" number:country="CA">
+#     <number:day number:style="long"/>
+#     <number:text>-</number:text>
+#     <number:month number:textual="true"/>
+#     <number:text>-</number:text>
+#     <number:year/>
+#   </number:date-style>
+# • number:time-style:
+#   <number:time-style style:name="N1">
+#     <number:minutes number:style="long"/>
+#     <number:text>:</number:text>
+#     <number:seconds number:style="long"/>
+#   </number:time-style>
+# • number:text-style:
+#   <number:text-style style:name="N1">
+#     <number:text-content/>
+#   </number:text-style>
+sub decodeNumberFormat()
+{
+  my $class = shift();
+  my ($node) = @_;
+
+  my $styleNS = $Spreadsheet::Nifty::ODS::namespaces->{style};
+  my $numberNS = $Spreadsheet::Nifty::ODS::namespaces->{number};
+  my $foNS = $Spreadsheet::Nifty::ODS::namespaces->{fo};
+
+  my $style = {};
+  $style->{name} = $node->getAttributeNS($styleNS, 'name');
+  $style->{type} = $node->localname();
+  $style->{items} = [];
+
+  # Gather all children within the 'number' namespace
+  my $children = [ $node->childNodes() ];
+  for my $c (@{$children})
+  {
+    ($c->nodeType() != XML_ELEMENT_NODE) && next;  # Filter out comments or whitespace
+    ($c->namespaceURI() ne $numberNS) && next;
+
+    my $type = $c->localName();
+    my $namespace = $c->namespaceURI();
+
+    my $item = {};
+    $item->{type} = $type;
+
+    if ($namespace eq $numberNS)
+    {
+      # TODO: Some of these can have further <number:embedded-text/> child elements
+	    # NOTE: The following are also valid, but have no attributes or children:
+	    # • <number:text-content/>
+	    # • <number:am-pm/>
+	    # • <number:boolean/>
+	    if ($type eq 'number')
+	    {
+	      $class->gatherAttributes($item, $c, $Spreadsheet::Nifty::ODS::namespaces->{loext}, ['min-decimal-places']);
+	      $class->gatherAttributes($item, $c, $numberNS, ['decimal-places', 'min-integer-digits', 'min-decimal-places', 'grouping']);
+	    }
+	    elsif ($type eq 'scientific-number')
+	    {
+	      $class->gatherAttributes($item, $c, $Spreadsheet::Nifty::ODS::namespaces->{loext}, ['min-decimal-places']);
+	      $class->gatherAttributes($item, $c, $numberNS, ['decimal-places', 'min-decimal-places', 'min-integer-digits', 'min-exponent-digits', 'forced-exponent-sign', 'grouping']);
+	    }
+	    elsif ($type eq 'fraction')
+	    {
+	      $class->gatherAttributes($item, $c, $Spreadsheet::Nifty::ODS::namespaces->{loext}, ['max-denominator-value']);
+	      $class->gatherAttributes($item, $c, $numberNS, ['min-numerator-digits', 'min-denominator-digits', 'denominator-value', 'grouping']);
+	    }
+	    elsif ($type eq 'currency-symbol')
+	    {
+	      $class->gatherAttributes($item, $c, $numberNS, ['language', 'country']);
+	      $item->{content} = $c->textContent();
+	    }
+	    elsif (($type eq 'day') || ($type eq 'year') || ($type eq 'era') || ($type eq 'day-of-week') || ($type eq 'quarter'))
+	    {
+	      $class->gatherAttributes($item, $c, $numberNS, ['calendar', 'style']);
+	    }
+	    elsif ($type eq 'month')
+	    {
+	      $class->gatherAttributes($item, $c, $numberNS, ['calendar', 'style', 'possessive-form', 'textual']);
+	    }
+	    elsif ($type eq 'week-of-year')
+	    {
+	      $class->gatherAttributes($item, $c, $numberNS, ['calendar']);
+	    }
+	    elsif (($type eq 'hours') || ($type eq 'minutes'))
+	    {
+	      $class->gatherAttributes($item, $c, $numberNS, ['style']);
+	    }
+	    elsif ($type eq 'seconds')
+	    {
+	      $class->gatherAttributes($item, $c, $numberNS, ['decimal-places', 'style']);
+	    }
+	    elsif ($type eq 'fill-character')
+	    {
+	      $item->{content} = $c->textContent();
+	    }
+	    elsif ($type eq 'text')
+	    {
+	      $item->{content} = $c->textContent();
+	    }
+      elsif ($type eq 'color')
+      {
+        # Ancient method of embedding a colour that predates ODF 1.0. We
+        #  pretend it was a <style:text-propreties/>.
+        $item->{type} = 'text-properties';
+        $class->gatherAttributes($item, $c, $numberNS, ['color']);
+      }
+      push(@{$style->{items}}, $item);
+    }
+    elsif ($namespace eq $styleNS)
+    {
+      if ($type eq 'text-properties')
+      {
+        $class->gatherAttributes($item, $c, $foNS, ['color', 'background-color',
+                                                    'country', 'language', 'script',
+                                                    'font-family', 'font-size', 'font-style', 'font-variant', 'font-weight', 'font-name',
+                                                    'text-underline-color', 'text-underline-mode', 'text-underline-style', 'text-underline-type', 'text-underline-width']);
+        push(@{$style->{items}}, $item);
+      }
+      elsif ($type eq 'map')
+      {
+        # This will be stored under a separate 'maps' key, not as an 'item'.
+        (!defined($style->{maps})) && do { $style->{maps} = []; };
+        my $map = {};
+        $class->gatherAttributes($map, $c, $styleNS, ['apply-style-name', 'base-cell-address', 'condition']);
+        push(@{$style->{maps}}, $map);
+      }
+    }
+
+  }
+
+  return $style;
 }
 
 1;

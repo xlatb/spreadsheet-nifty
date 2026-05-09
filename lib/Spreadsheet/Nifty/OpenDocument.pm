@@ -186,7 +186,6 @@ sub readManifest()
     push(@{$manifest->{entries}}, $entry);
   }
 
-
   return $manifest;
 }
 
