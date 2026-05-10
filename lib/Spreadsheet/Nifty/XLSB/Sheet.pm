@@ -44,7 +44,13 @@ sub buildCell($)
   my $self = shift();
   my ($data) = @_;
 
-  my $cell = Spreadsheet::Nifty::XLSB::Cell->new($data->{dataType}, $data->{value});
+  my $private = {};
+  if (defined($data->{iStyleRef}))
+  {
+    $private->{xf} = $data->{iStyleRef};
+  }
+
+  my $cell = Spreadsheet::Nifty::XLSB::Cell->new($data->{dataType}, $data->{value}, $self, $private);
   return $cell;
 }
 

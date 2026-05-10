@@ -8,6 +8,7 @@ use Spreadsheet::Nifty::XLSB::RecordReader;
 use Spreadsheet::Nifty::XLSB::RecordTypes;
 use Spreadsheet::Nifty::XLSB::Decode;
 use Spreadsheet::Nifty::StructDecoder;
+use Spreadsheet::Nifty::IndexedColors;
 
 # === Class methods ===
 
@@ -24,6 +25,7 @@ sub new()
   $self->{cellStyles}    = [];
   $self->{styles}        = [];
   $self->{xfs}           = [];
+  $self->{palette}       = {indexed => Spreadsheet::Nifty::IndexedColors->new(), mru => []};
   bless($self, $class);
 
   return $self;
@@ -69,6 +71,10 @@ sub read($)
     elsif ($rec->{type} == Spreadsheet::Nifty::XLSB::RecordTypes::BEGIN_CELL_XFS)
     {
       $self->readCellXfs($recs) || return !!0;
+    }
+    elsif ($rec->{type} == Spreadsheet::Nifty::XLSB::RecordTypes::BEGIN_COLOR_PALETTE)
+    {
+      $self->readColorPalette($recs) || return !!0;
     }
   }
 
@@ -251,6 +257,83 @@ sub readCellXfs($)
   }
 
   return !!0;  # Hit end of records before seeing the end-of-cell-xfs record
+}
+
+sub readColorPalette($)
+{
+  my $self = shift();
+  my ($recs) = @_;
+
+  my $palette = {};
+  $palette->{indexed} = Spreadsheet::Nifty::IndexedColors->new();
+  $palette->{mru}     = [];
+
+  while (my $rec = $recs->read())
+  {
+    if ($rec->{type} == Spreadsheet::Nifty::XLSB::RecordTypes::END_COLOR_PALETTE)
+    {
+      $self->{palette} = $palette;
+      return !!1;
+    }
+    elsif ($rec->{type} == Spreadsheet::Nifty::XLSB::RecordTypes::BEGIN_INDEXED_COLORS)
+    {
+      while (my $rec = $recs->read())
+      {
+        ($rec->{type} == Spreadsheet::Nifty::XLSB::RecordTypes::END_INDEXED_COLORS) && last;
+
+        if ($rec->{type} == $rec->{type} == Spreadsheet::Nifty::XLSB::RecordTypes::INDEXED_COLOR)
+        {
+          my $decoder = Spreadsheet::Nifty::XLSB::Decode->decoder($rec->{data});
+          my $c = $decoder->decodeHash(['r:u8', 'g:u8', 'b:u8']);
+          $palette->{indexed}->addColorRGB($c);
+        }
+      }
+    }
+    elsif ($rec->{type} == Spreadsheet::Nifty::XLSB::RecordTypes::BEGIN_MRU_COLORS)
+    {
+      while (my $rec = $recs->read())
+      {
+        ($rec->{type} == Spreadsheet::Nifty::XLSB::RecordTypes::END_MRU_COLORS) && last;
+
+        my $decoder = Spreadsheet::Nifty::XLSB::Decode->decoder($rec->{data});
+        my $color = $decoder->decodeField('BrtColor');
+        push(@{$palette->{mru}}, $color);
+      }
+    }
+  }
+
+  return !!0;  # Hit end of records before seeing the end-of-color-palette record
+}
+
+sub getXf($)
+{
+  my $self = shift();
+  my ($i) = @_;
+
+  (($i < 0) || ($i >= scalar(@{$self->{xfs}}))) && return undef;  # Out of range
+
+  my $xf = $self->{xfs}->[$i];
+  return $xf;
+}
+
+sub getFill($)
+{
+  my $self = shift();
+  my ($i) = @_;
+
+  (($i < 0) || ($i >= scalar(@{$self->{fills}}))) && return undef;  # Out of range
+
+  my $fill = $self->{fills}->[$i];
+  return $fill;
+}
+
+sub getNumberFormat($)
+{
+  my $self = shift();
+  my ($i) = @_;
+
+  my $fmt = $self->{numberFormats}->{$i};
+  return $fmt;
 }
 
 1;

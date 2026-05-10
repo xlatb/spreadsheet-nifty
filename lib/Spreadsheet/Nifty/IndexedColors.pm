@@ -58,7 +58,17 @@ sub addColor($)
   (!defined($self->{colors})) && do { $self->{colors} = []; };
 
   push(@{$self->{colors}}, $c);
+  return;
+}
 
+sub addColorRGB($$$)
+{
+  my $self = shift();
+  my ($c) = @_;
+
+  (!defined($self->{colors})) && do { $self->{colors} = []; };
+
+  push(@{$self->{colors}}, sprintf("%02X%02X%02X", $c->{r}, $c->{g}, $c->{b}));
   return;
 }
 
@@ -70,6 +80,18 @@ sub getColor($)
   (!defined($self->{colors})) && return $self->getLegacyColor($i);
   
   return $self->{colors}->[$i];
+}
+
+sub getColorRGB($)
+{
+  my $self = shift();
+  my ($i) = @_;
+
+  my $c = $self->getColor($i);
+  (!defined($c)) && return undef;
+
+  my ($r, $g, $b) = unpack("CCC", pack("H*", $c));
+  return {r=> $r, g => $g, b => $b};
 }
 
 1;
