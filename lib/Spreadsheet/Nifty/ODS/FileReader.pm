@@ -26,7 +26,7 @@ sub new()
   $self->{manifest} = undef;
   $self->{workbook} = {};
   $self->{parked}   = [];
-  $self->{styles}   = {auto => undef};
+  $self->{styles}   = {'content.auto' => undef, 'styles.auto' => undef, 'styles.named' => undef};
   $self->{debug}    = 0;
   
   bless($self, $class);
@@ -196,7 +196,6 @@ sub readWorkbook()
     if ($localName eq 'automatic-styles')
     {
       $self->{styles}->{'content.auto'} = Spreadsheet::Nifty::ODS::Styles->new();
-
       $self->{styles}->{'content.auto'}->read($xmlReader);
 
       (!Spreadsheet::Nifty::XMLReaderUtils->atEndOfElement($xmlReader, 'automatic-styles', $xmlns)) && die("Misaligned after reading automatic styles");
@@ -479,6 +478,26 @@ sub getSheetColCount($)
   my ($sheetIndex) = @_;
 
   return $self->{workbook}->{sheets}->[$sheetIndex]->{dimensions}->{colCount};
+}
+
+sub getStyle($$)
+{
+  my $self = shift();
+  my ($family, $name) = @_;
+
+  my $style;
+
+  $style = $self->{styles}->{'content.auto'}->getStyle($family, $name);
+  (defined($style)) && return $style;
+
+  $style = $self->{styles}->{'styles.auto'}->getStyle($family, $name);
+  (defined($style)) && return $style;
+
+  $style = $self->{styles}->{'styles.named'}->getStyle($family, $name);
+  (defined($style)) && return $style;
+
+  $style = $self->{styles}->{'styles.named'}->getDefaultStyle($family);
+  return $style;
 }
 
 1;

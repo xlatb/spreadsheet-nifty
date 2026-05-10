@@ -92,4 +92,22 @@ sub read($)
   return !!1;
 }
 
+sub getStyle($$)
+{
+  my $self = shift();
+  my ($family, $name) = @_;
+
+  (!defined($self->{family}->{$family})) && return undef;
+
+  return $self->{family}->{$family}->{$name};
+}
+
+sub getDefaultStyle($)
+{
+  my $self = shift();
+  my ($family) = @_;
+
+  return $self->{default}->{$family};
+}
+
 1;

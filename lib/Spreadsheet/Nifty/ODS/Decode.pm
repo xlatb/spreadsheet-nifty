@@ -217,7 +217,7 @@ sub decodeCellDefinition($)
   my $tablens  = $Spreadsheet::Nifty::ODS::namespaces->{table};
   my $officens = $Spreadsheet::Nifty::ODS::namespaces->{office};
 
-  my $formula = $node->getAttributeNS($officens, 'formula');
+  my $formula = $node->getAttributeNS($tablens, 'formula');
   my $valueType = $node->getAttributeNS($officens, 'value-type') // 'void';
 
   my $text;
@@ -258,6 +258,7 @@ sub decodeCellDefinition($)
   $cellDef->{valueType} = $valueType;
   $cellDef->{value}     = $value;
   $cellDef->{text}      = $text;
+  $cellDef->{f}         = $formula;
 
   # If a cell has no interesting features, mark it as "empty".
   if (($valueType eq 'void') && !$node->hasChildNodes() && !defined($cellDef->{style}))
