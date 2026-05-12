@@ -4,6 +4,8 @@ use strict;
 
 package Spreadsheet::Nifty::Cell;
 
+use Storable qw();
+
 # === Class methods ===
 
 sub new($$)
@@ -28,6 +30,9 @@ sub dup()
 
   my $new = {t => $self->{t}, v => $self->{v}};
   bless($new, ref($self));
+
+  (defined($self->{p}))   && do { $new->{p}   = Storable::dclone($self->{p}); };  # NOTE: Deep copy of private info
+  (defined($self->{ctx})) && do { $new->{ctx} = $self->{ctx}; };
 
   return $new;
 }

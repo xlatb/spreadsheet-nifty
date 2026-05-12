@@ -116,32 +116,26 @@ sub readColumns()
 
   my $xmlns = $Spreadsheet::Nifty::ODS::namespaces->{table};
   
-  my $columnDefs = [];
+  # Read each column def
+  my $defs = [];
   while (Spreadsheet::Nifty::XMLReaderUtils->atStartOfElement($self->{xmlReader}, 'table-column', $xmlns))
   {
     #Spreadsheet::Nifty::XMLReaderUtils->dump($self->{xmlReader}, "readColumns()");
     my $columnDef = Spreadsheet::Nifty::ODS::Decode->decodeColumnDefinition($self->{xmlReader}->copyCurrentNode(1));
-    push(@{$columnDefs}, $columnDef);
+    push(@{$defs}, $columnDef);
     ($self->{xmlReader}->read() != 1) && die("readColumns(): XML read error");
   }
 
-  $self->{columnDefs} = $columnDefs;
-  #print main::Dumper($columnDefs);
-
-  return;
-}
-
-sub countColumns()
-{
-  my $self = shift();
-
-  my $count = 0;
-  for my $cd (@{$self->{columnDefs}})
+  # Create a map of column index to def
+  my $byIndex = [];
+  for (my $d = 0; $d < scalar(@{$defs}); $d++)
   {
-    $count += $cd->{count};
+    push(@{$byIndex}, ($d) x $defs->[$d]->{count});
   }
 
-  return $count;
+  $self->{columnDefs} = {defs => $defs, byIndex => $byIndex};
+
+  return;
 }
 
 sub parkXmlReader()
@@ -163,7 +157,8 @@ sub parkXmlReader()
   return;
 }
 
-sub readRow()
+# Reads the current row as a tuple of {rowDef, cellDefs}.
+sub readRowAsDefs()
 {
   my $self = shift();
 
@@ -207,12 +202,12 @@ sub readRow()
   }
 
   # Remember current row
-  $self->{currentRow} = {rowDef => $rowDef, cellDefs => $cellDefs};  
+  $self->{currentRow} = {rowDef => $rowDef, cellDefs => $cellDefs};
 
   $self->{rowIndex}++;
 
   #print main::Dumper($rowElement->toString(), $rowDef, $cellDefs);
-  return $cellDefs;
+  return $self->{currentRow};
 }
 
 # Seek to the given row. Returns true on success.
@@ -234,7 +229,7 @@ sub seekRow($)
   # Read rows until we reach the target row.
   while ($self->{rowIndex} < $rowIndex)
   {
-    (!defined($self->readRow())) && return !!0;
+    (!defined($self->readRowAsDefs())) && return !!0;
   }
 
   ($rowIndex != $self->{rowIndex}) && die("seekRow(): Never reached target row $rowIndex");

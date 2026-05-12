@@ -13,7 +13,7 @@ sub new($$$;$)
   my ($type, $value, $ctx, $private) = @_;
 
   my $self = $class->SUPER::new($type, $value);
-  $self->{p} = $private // {};
+  $self->{p} = Storable::dclone($private);  # Deep copy of private info
   $self->{ctx} = sub { return $ctx; };  # Closure around context
 
   Scalar::Util::weaken($ctx);

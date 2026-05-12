@@ -101,12 +101,12 @@ sub readRow()
 {
   my $self = shift();
 
-  my $cellDefs = $self->{sheetReader}->readRow();
-  (!defined($cellDefs)) && return undef;
+  my $defs = $self->{sheetReader}->readRowAsDefs();
+  (!defined($defs)) && return undef;
 
   my $cells = [];
   my $x = 0;
-  for my $def (@{$cellDefs})
+  for my $def (@{$defs->{cellDefs}})
   {
     # Handle empty cells
     if ($def->{empty})
@@ -116,15 +116,29 @@ sub readRow()
     }
 
     my $cell = $self->buildCell($def);
+
+    # Apply default style if the cell def did not have one
+    if (!defined($def->{style}))
+    {
+      $cell->{p}->{style} = $defs->{rowDef}->{cellStyle} // $self->{sheetReader}->{columnDefs}->{defs}->[$self->{sheetReader}->{columnDefs}->{byIndex}->[$x]]->{cellStyle};
+    }
+
     $cells->[$x++] = $cell;
 
     my $count = $def->{count};
     if ($count > 1)
     {
-      $x += $count - 1;
-      for (my $i = 0; $i <= $count; $i++)
+      for (my $i = 2; $i <= $count; $i++)
       {
-        push(@{$cells}, $cell->dup());
+        my $dup = $cell->dup();
+
+        # Apply default style if the cell def did not have one
+        if (!defined($def->{style}))
+        {
+          $dup->{p}->{style} = $defs->{rowDef}->{cellStyle} // $self->{sheetReader}->{columnDefs}->{defs}->[$self->{sheetReader}->{columnDefs}->{byIndex}->[$x]]->{cellStyle};
+        }
+
+        $cells->[$x++] = $dup;
       }
     }
   }

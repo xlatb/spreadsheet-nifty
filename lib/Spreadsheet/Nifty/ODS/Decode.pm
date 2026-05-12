@@ -278,24 +278,34 @@ sub decodeStyle($)
   my $styleNS = $Spreadsheet::Nifty::ODS::namespaces->{style};
   my $family = $node->getAttributeNS($styleNS, 'family');
 
+  my $style;
   if ($family eq 'table-cell')
   {
-    return Spreadsheet::Nifty::ODS::Decode->decodeCellStyle($node);
+    $style = Spreadsheet::Nifty::ODS::Decode->decodeCellStyle($node);
   }
   elsif ($family eq 'table-column')
   {
-    return Spreadsheet::Nifty::ODS::Decode->decodeColumnStyle($node);
+    $style = Spreadsheet::Nifty::ODS::Decode->decodeColumnStyle($node);
   }
   elsif ($family eq 'table-row')
   {
-    return Spreadsheet::Nifty::ODS::Decode->decodeRowStyle($node);
+    $style = Spreadsheet::Nifty::ODS::Decode->decodeRowStyle($node);
   }
   elsif ($family eq 'table')
   {
-    return Spreadsheet::Nifty::ODS::Decode->decodeTableStyle($node);
+    $style = Spreadsheet::Nifty::ODS::Decode->decodeTableStyle($node);
+  }
+  else
+  {
+    return undef;
   }
 
-  return undef;
+  if ($node->hasAttributeNS($styleNS, 'parent-style-name'))
+  {
+    $style->{'parent-style-name'} = $node->getAttributeNS($styleNS, 'parent-style-name');
+  }
+
+  return $style;
 }
 
 # <style:style style:name="ce1" style:family="table-cell" style:parent-style-name="xyz">
