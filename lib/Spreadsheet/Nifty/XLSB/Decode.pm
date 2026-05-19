@@ -16,6 +16,7 @@ sub decoder()
   my $decoder = StructDecoder->new(@_);
   $decoder->registerType('XLWideString', \&decodeXLWideString);
   $decoder->registerType('XLNullableWideString', \&decodeXLNullableWideString);
+  $decoder->registerType('ParsedFormula', \&decodeParsedFormula);
   $decoder->registerType('BrtColor', \&decodeBrtColor);
   $decoder->registerType('BrtXF', \&decodeBrtXF);
   $decoder->registerType('Blxf', \&decodeBlxf);
@@ -46,6 +47,14 @@ sub decodeXLNullableWideString()
 
   my $str = Encode::decode('UTF-16LE', $payload);
   return $str;
+}
+
+# Handles both CellParsedFormula and SharedParsedFormula.
+sub decodeParsedFormula()
+{
+  my $decoder = shift();
+
+  return $decoder->decodeHash(['tokenStreamSize:u32', 'tokenStream:bytes[tokenStreamSize]', 'extraSize:u32', 'extra:bytes[extraSize]']);
 }
 
 sub decodeBrtColor()

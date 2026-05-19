@@ -2,9 +2,12 @@
 use warnings;
 use strict;
 
-use Spreadsheet::Nifty::XLSB::BinaryIndex;
-
 package Spreadsheet::Nifty::XLSB::SheetReader;
+
+use Spreadsheet::Nifty::XLSB::BinaryIndex;
+use Spreadsheet::Nifty::BIFF::FormulaDecoder;
+
+my $formulaDecoder = Spreadsheet::Nifty::BIFF::FormulaDecoder->new(Spreadsheet::Nifty::BIFF::Constants::BIFF_V12);
 
 # === Class methods ===
 
@@ -14,17 +17,18 @@ sub new()
   my ($workbook, $index, $partname) = @_;
 
   my $self = {};
-  $self->{workbook}      = $workbook;
-  $self->{relationships} = undef;
-  $self->{binaryIndex}   = undef;
-  $self->{sheetIndex}    = $index;
-  $self->{partname}      = $partname;
-  $self->{debug}         = $workbook->{debug};
-  $self->{records}       = undef;
-  $self->{rowIndex}      = 0;
-  $self->{rowHeader}     = undef;  # BrtRowHdr or BrtEndSheetData
-  $self->{protection}    = undef;  # BrtSheetProtection or BrtSheetProtectionIso
-  $self->{props}         = {};  # BrtWsProp
+  $self->{workbook}       = $workbook;
+  $self->{relationships}  = undef;
+  $self->{binaryIndex}    = undef;
+  $self->{sheetIndex}     = $index;
+  $self->{partname}       = $partname;
+  $self->{debug}          = $workbook->{debug};
+  $self->{records}        = undef;
+  $self->{rowIndex}       = 0;
+  $self->{rowHeader}      = undef;  # BrtRowHdr or BrtEndSheetData
+  $self->{protection}     = undef;  # BrtSheetProtection or BrtSheetProtectionIso
+  $self->{props}          = {};  # BrtWsProp
+  $self->{sharedFormulas} = {};
 
   bless($self, $class);
 
@@ -211,7 +215,7 @@ sub readRowHeader()
     ($self->{debug}) && printf("SheetReader readRowHeader(): REC type %d size %d name %s\n", $rec->{type}, $rec->{size}, $rec->{name} // '?');
     ($self->{debug}) && ($rec->{size}) && printf("  data: %s\n", unpack('H*', $rec->{data}));
 
-    if ($rec->{name} eq 'BrtRowHdr')
+    if ($rec->{type} == Spreadsheet::Nifty::XLSB::RecordTypes::ROW_HDR)
     {
       my $decoder = Spreadsheet::Nifty::XLSB::Decode->decoder($rec->{data});
       my $rowHdr = $decoder->decodeHash(['row:u32', 'ixfe:u32', 'height:u16', 'flags1:u16', 'flags2:u8', 'ccolspan:u32']);
@@ -219,7 +223,7 @@ sub readRowHeader()
       ($self->{debug}) && print main::Dumper($rowHdr);
       last;
     }
-    elsif ($rec->{name} eq 'BrtEndSheetData')
+    elsif ($rec->{type} == Spreadsheet::Nifty::XLSB::RecordTypes::END_SHEET_DATA)
     {
       $self->{rowHeader} = {type => $rec->{name}, offset => $offset};
       last;
@@ -240,38 +244,38 @@ sub decodeCell($)
   my $decoder = Spreadsheet::Nifty::XLSB::Decode->decoder($rec->{data});
   my $cell;
 
-  if ($rec->{name} eq 'BrtCellBlank')
+  if ($rec->{type} == Spreadsheet::Nifty::XLSB::RecordTypes::CELL_BLANK)
   {
     $cell = $decoder->decodeHash(['column:u32', 'iStyleRef:u24', 'flags:u8']);
     $cell->{dataType} = Spreadsheet::Nifty::TYPE_NULL;
   }
-  elsif ($rec->{name} eq 'BrtCellBool')
+  elsif ($rec->{type} == Spreadsheet::Nifty::XLSB::RecordTypes::CELL_BOOL)
   {
     $cell = $decoder->decodeHash(['column:u32', 'iStyleRef:u24', 'flags:u8', 'value:u8']);
     $cell->{dataType} = Spreadsheet::Nifty::TYPE_BOOL;
   }
-  elsif ($rec->{name} eq 'BrtCellError')
+  elsif ($rec->{type} == Spreadsheet::Nifty::XLSB::RecordTypes::CELL_ERROR)
   {
     $cell = $decoder->decodeHash(['column:u32', 'iStyleRef:u24', 'flags:u8', 'value:u8']);
     $cell->{dataType} = Spreadsheet::Nifty::TYPE_ERR;
   }
-  elsif ($rec->{name} eq 'BrtCellSt')
+  elsif ($rec->{type} == Spreadsheet::Nifty::XLSB::RecordTypes::CELL_ST)  # String by value
   {
     $cell = $decoder->decodeHash(['column:u32', 'iStyleRef:u24', 'flags:u8', 'value:XLWideString']);
     $cell->{dataType} = Spreadsheet::Nifty::TYPE_STR;
   }
-  elsif ($rec->{name} eq 'BrtCellRString')  # Rich string
+  elsif ($rec->{type} == Spreadsheet::Nifty::XLSB::RecordTypes::CELL_RSTRING)  # Rich string
   {
     $cell = $decoder->decodeHash(['column:u32', 'iStyleRef:u24', 'flags:u8', 'flags2:u8', 'value:XLWideString']);  # TODO: More fields
     $cell->{dataType} = Spreadsheet::Nifty::TYPE_STR;
   }
-  elsif ($rec->{name} eq 'BrtCellReal')
+  elsif ($rec->{type} == Spreadsheet::Nifty::XLSB::RecordTypes::CELL_REAL)
   {
     $cell = $decoder->decodeHash(['column:u32', 'iStyleRef:u24', 'flags:u8', 'value:f64']);
     $cell->{dataType} = Spreadsheet::Nifty::TYPE_NUM;
     #printf("  Real: %g\n", $cell->{value});
   }
-  elsif ($rec->{name} eq 'BrtCellIsst')
+  elsif ($rec->{type} == Spreadsheet::Nifty::XLSB::RecordTypes::CELL_ISST)  # String via reference to shared string table
   {
     $cell = $decoder->decodeHash(['column:u32', 'iStyleRef:u24', 'flags:u8', 'value:u32']);
     my $str = $self->{workbook}->{sharedStrings}->[$cell->{value}]->{string};
@@ -279,31 +283,32 @@ sub decodeCell($)
     $cell->{dataType} = Spreadsheet::Nifty::TYPE_STR;
     $cell->{value}    = $str;
   }
-  elsif ($rec->{name} eq 'BrtCellRk')
+  elsif ($rec->{type} == Spreadsheet::Nifty::XLSB::RecordTypes::CELL_RK)
   {
     $cell = $decoder->decodeHash(['column:u32', 'iStyleRef:u24', 'flags:u8']);
     my $value = Spreadsheet::Nifty::Utils->translateRk($decoder->decodeField('u32'));
     $cell->{dataType} = Spreadsheet::Nifty::TYPE_NUM;
     $cell->{value} = $value;
   }
-  elsif ($rec->{name} eq 'BrtFmlaBool')
+  elsif ($rec->{type} == Spreadsheet::Nifty::XLSB::RecordTypes::FMLA_BOOL)
   {
-    $cell = $decoder->decodeHash(['column:u32', 'iStyleRef:u24', 'flags:u8', 'value:u8', 'flags2:u16']);  # TODO: More fields
+    $cell = $decoder->decodeHash(['column:u32', 'iStyleRef:u24', 'flags:u8', 'value:u8', 'flags2:u16', 'formula:ParsedFormula']);
     $cell->{dataType} = Spreadsheet::Nifty::TYPE_BOOL;
+    #print main::Dumper($cell, unpack('H*', $cell->{formula}->{tokenStream}));
   }
-  elsif ($rec->{name} eq 'BrtFmlaError')
+  elsif ($rec->{type} == Spreadsheet::Nifty::XLSB::RecordTypes::FMLA_ERROR)
   {
-    $cell = $decoder->decodeHash(['column:u32', 'iStyleRef:u24', 'flags:u8', 'value:u8', 'flags2:u16']);  # TODO: More fields
+    $cell = $decoder->decodeHash(['column:u32', 'iStyleRef:u24', 'flags:u8', 'value:u8', 'flags2:u16', 'formula:ParsedFormula']);
     $cell->{dataType} = Spreadsheet::Nifty::TYPE_ERR;
   }
-  elsif ($rec->{name} eq 'BrtFmlaNum')
+  elsif ($rec->{type} == Spreadsheet::Nifty::XLSB::RecordTypes::FMLA_NUM)
   {
-    $cell = $decoder->decodeHash(['column:u32', 'iStyleRef:u24', 'flags:u8', 'value:f64']);  # TODO: More fields
+    $cell = $decoder->decodeHash(['column:u32', 'iStyleRef:u24', 'flags:u8', 'value:f64', 'flags2:u16', 'formula:ParsedFormula']);
     $cell->{dataType} = Spreadsheet::Nifty::TYPE_NUM;
   }
-  elsif ($rec->{name} eq 'BrtFmlaString')
+  elsif ($rec->{type} == Spreadsheet::Nifty::XLSB::RecordTypes::FMLA_STRING)
   {
-    $cell = $decoder->decodeHash(['column:u32', 'iStyleRef:u24', 'flags:u8', 'value:XLWideString', 'flags2:u16']);  # TODO: More fields
+    $cell = $decoder->decodeHash(['column:u32', 'iStyleRef:u24', 'flags:u8', 'value:XLWideString', 'flags2:u16', 'formula:ParsedFormula']);
     $cell->{dataType} = Spreadsheet::Nifty::TYPE_STR;
   }
 
@@ -312,6 +317,67 @@ sub decodeCell($)
   $cell->{type} = $rec->{type};
   
   return $cell;
+}
+
+# Given a BrtFRTBegin or BrtACBegin record, skips records until the end of the container is reached.
+sub skipCompatibilityContainer($)
+{
+  my $self = shift();
+  my ($begin) = @_;
+
+  while (1)
+  {
+    my $rec = $self->{records}->read();
+    (!defined($rec)) && last;  # No more records
+
+    ($self->{debug}) && printf("SheetReader skipCompatibilityContainer(): REC type %d  size %d  name %s\n", $rec->{type}, $rec->{size}, $rec->{name} // '?');
+
+    if (($rec->{type} == Spreadsheet::Nifty::XLSB::RecordTypes::FRT_BEGIN) ||
+        ($rec->{type} == Spreadsheet::Nifty::XLSB::RecordTypes::AC_BEGIN))
+    {
+      # Nested container
+      $self->skipCompatibilityContainer($rec);
+    }
+    elsif ($rec->{type} == Spreadsheet::Nifty::XLSB::RecordTypes::FRT_END)
+    {
+      ($begin->{type} == Spreadsheet::Nifty::XLSB::RecordTypes::FRT_BEGIN) || die("Unexpected BrtFRTEnd record");
+      return !!1;
+    }
+    elsif ($rec->{type} == Spreadsheet::Nifty::XLSB::RecordTypes::AC_END)
+    {
+      ($begin->{type} == Spreadsheet::Nifty::XLSB::RecordTypes::AC_BEGIN) || die("Unexpected BrtACEnd record");
+      return !!1;
+    }
+  }
+
+  die("Unexpected EOF while skipping compatibility container. Container type '$begin->{name}'.");
+}
+
+sub recordSharedFormula($)
+{
+  my $self = shift();
+  my ($shared) = @_;
+
+  my $key = sprintf("%d:%d", $shared->{minCol}, $shared->{minRow});
+
+  # TODO: eval {}?
+  # TODO: Decode lazily from getSharedFormula?
+  my $formula = $formulaDecoder->decode($shared->{formula}->{tokenStream}, $shared->{formula}->{extra});
+  $self->{sharedFormulas}->{$key} = $formula;
+
+  #print main::Dumper('recordSharedFormula', $shared, $formula);
+
+  return;
+}
+
+sub getSharedFormula($$)
+{
+  my $self = shift();
+  my ($col, $row) = @_;
+
+  my $key = sprintf("%d:%d", $col, $row);
+  #print main::Dumper('getSharedFormula', $col, $row, $key, $self->{sharedFormulas});
+  return $self->{sharedFormulas}->{$key};
 }
 
 # Reads a row of cells
@@ -330,7 +396,7 @@ sub readRowInternal()
     ($self->{debug}) && printf("SheetReader readRowInternal(): offset %ld  REC type %d  size %d  name %s\n", $offset, $rec->{type}, $rec->{size}, $rec->{name} // '?');
     ($self->{debug}) && ($rec->{size}) && printf("  data: %s\n", unpack('H*', $rec->{data}));
 
-    if ($rec->{name} eq 'BrtRowHdr')
+    if ($rec->{type} == Spreadsheet::Nifty::XLSB::RecordTypes::ROW_HDR)
     {
       my $decoder = Spreadsheet::Nifty::XLSB::Decode->decoder($rec->{data});
       my $rowHdr = $decoder->decodeHash(['row:u32', 'ixfe:u32', 'height:u16', 'flags1:u16', 'flags2:u8', 'ccolspan:u32']);
@@ -338,10 +404,32 @@ sub readRowInternal()
       ($self->{debug}) && print main::Dumper($rowHdr);
       last;
     }
-    elsif ($rec->{name} eq 'BrtEndSheetData')
+    elsif ($rec->{type} == Spreadsheet::Nifty::XLSB::RecordTypes::END_SHEET_DATA)
     {
       $self->{rowHeader} = {type => $rec->{name}, offset => $offset};
       last;
+    }
+    elsif (($rec->{type} == Spreadsheet::Nifty::XLSB::RecordTypes::FRT_BEGIN) ||
+           ($rec->{type} == Spreadsheet::Nifty::XLSB::RecordTypes::AC_BEGIN))
+    {
+      # Future record or alternate content container
+      $self->skipCompatibilityContainer($rec);
+    }
+    elsif ($rec->{type} == Spreadsheet::Nifty::XLSB::RecordTypes::SHR_FMLA)
+    {
+      # Non-array shared formula
+      my $decoder = Spreadsheet::Nifty::XLSB::Decode->decoder($rec->{data});
+      my $shared = $decoder->decodeHash(['minRow:u32', 'maxRow:u32', 'minCol:u32', 'maxCol:u32', 'formula:ParsedFormula']);
+      $shared->{isArray} = !!0;
+      $self->recordSharedFormula($shared);
+    }
+    elsif ($rec->{type} == Spreadsheet::Nifty::XLSB::RecordTypes::ARR_FMLA)
+    {
+      # Array shared formula
+      my $decoder = Spreadsheet::Nifty::XLSB::Decode->decoder($rec->{data});
+      my $shared = $decoder->decodeHash(['minRow:u32', 'maxRow:u32', 'minCol:u32', 'maxCol:u32', 'flags:u8', 'formula:ParsedFormula']);
+      $shared->{isArray} = !!0;
+      $self->recordSharedFormula($shared);
     }
     else
     {
@@ -349,6 +437,7 @@ sub readRowInternal()
       (!defined($cell)) && next;
 
       (!defined($cell->{column})) && die("Returned cell with no column?");
+      $cell->{row} = $self->{rowHeader}->{data}->{row};
       $row->[$cell->{column}] = $cell;
     }
   }
@@ -420,6 +509,9 @@ sub seekRow($)
 }
 
 # Skip forward to the next row that contains data.
+# This is probably quicker than readRowInternal, because we don't decode
+#  cells. But we do decode shared formulas, because they may be referenced
+#  later on.
 sub skipRow()
 {
   my $self = shift();
@@ -431,10 +523,12 @@ sub skipRow()
   my $offset = $self->{records}->tell();
   while (my $rec = $self->{records}->read())
   {
+    (!defined($rec)) && last;  # No more records
+
     ($self->{debug}) && printf("SheetReader skipRow(): REC type %d size %d name %s\n", $rec->{type}, $rec->{size}, $rec->{name} // '?');
     ($self->{debug}) && ($rec->{size}) && printf("  data: %s\n", unpack('H*', $rec->{data}));
 
-    if ($rec->{name} eq 'BrtRowHdr')
+    if ($rec->{type} == Spreadsheet::Nifty::XLSB::RecordTypes::ROW_HDR)
     {
       my $decoder = Spreadsheet::Nifty::XLSB::Decode->decoder($rec->{data});
       my $rowHdr = $decoder->decodeHash(['row:u32', 'ixfe:u32', 'height:u16', 'flags1:u16', 'flags2:u8', 'ccolspan:u32']);
@@ -442,10 +536,32 @@ sub skipRow()
       ($self->{debug}) && print main::Dumper($rowHdr);
       last;
     }
-    elsif ($rec->{name} eq 'BrtEndSheetData')
+    elsif ($rec->{type} == Spreadsheet::Nifty::XLSB::RecordTypes::END_SHEET_DATA)
     {
       $self->{rowHeader} = {type => $rec->{name}, offset => $offset};
       last;
+    }
+    elsif (($rec->{type} == Spreadsheet::Nifty::XLSB::RecordTypes::FRT_BEGIN) ||
+           ($rec->{type} == Spreadsheet::Nifty::XLSB::RecordTypes::AC_BEGIN))
+    {
+      # Future record or alternate content container
+      $self->skipCompatibilityContainer($rec);
+    }
+    elsif ($rec->{type} == Spreadsheet::Nifty::XLSB::RecordTypes::SHR_FMLA)
+    {
+      # Non-array shared formula
+      my $decoder = Spreadsheet::Nifty::XLSB::Decode->decoder($rec->{data});
+      my $shared = $decoder->decodeHash(['minRow:u32', 'maxRow:u32', 'minCol:u32', 'maxCol:u32', 'formula:ParsedFormula']);
+      $shared->{isArray} = !!0;
+      $self->recordSharedFormula($shared);
+    }
+    elsif ($rec->{type} == Spreadsheet::Nifty::XLSB::RecordTypes::ARR_FMLA)
+    {
+      # Array shared formula
+      my $decoder = Spreadsheet::Nifty::XLSB::Decode->decoder($rec->{data});
+      my $shared = $decoder->decodeHash(['minRow:u32', 'maxRow:u32', 'minCol:u32', 'maxCol:u32', 'flags:u8', 'formula:ParsedFormula']);
+      $shared->{isArray} = !!0;
+      $self->recordSharedFormula($shared);
     }
 
     $offset = $self->{records}->tell();

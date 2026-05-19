@@ -141,8 +141,8 @@ sub _getMember($)
   my $self = shift();
   my ($membername) = @_;
 
-  # Initial slash is removed
-  $membername =~ s#^/##;
+  # Initial slash(es) are removed
+  $membername =~ s#^/+##;
 
   my $zipMember = $self->{zip}->memberNamed($membername);
   (!$zipMember) && die("Member '${membername}' not found in this ZIP package\n");
@@ -159,6 +159,13 @@ sub openMember($)
 
   my $zipReader = Spreadsheet::Nifty::ZIPReader->new($zipMember);
   return $zipReader;
+}
+
+sub getMemberNames()
+{
+  my $self = shift();
+
+  return [ map({ '/' . $_ } $self->{zip}->memberNames()) ];
 }
 
 sub readRelationshipsMember($)

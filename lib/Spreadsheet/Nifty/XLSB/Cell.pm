@@ -5,6 +5,10 @@ use strict;
 package Spreadsheet::Nifty::XLSB::Cell;
 use parent 'Spreadsheet::Nifty::Cell';
 
+use Spreadsheet::Nifty::BIFF::FormulaDecoder;
+
+my $formulaDecoder = Spreadsheet::Nifty::BIFF::FormulaDecoder->new(Spreadsheet::Nifty::BIFF::Constants::BIFF_V12);
+
 my $errorMap =
 {
    0 => 1,  # #NULL!
@@ -70,6 +74,11 @@ sub resolveColor($)
     # TODO: Theme colours
     return undef;
   }
+  else
+  {
+    # TODO: Are there other cases?
+    return undef;
+  }
 
   # TODO: Process tint field
 
@@ -119,8 +128,14 @@ sub formula()
 {
   my $self = shift();
 
-  return undef;  #TODO
-}
+  (!defined($self->{p}->{f})) && return undef;
 
+  # TODO: Retrieve a formulaDecoder from the context
+  my $formula = $formulaDecoder->decode($self->{p}->{f}->{tokenStream}, $self->{p}->{f}->{extra});
+  #print main::Dumper($formula);
+  my $context = {col => $self->{p}->{x}, row => $self->{p}->{y}, getSharedFormula => sub { $self->{ctx}->()->{sheetReader}->getSharedFormula(@_) } };
+
+  return $formula->unparse($context);
+}
 
 1;

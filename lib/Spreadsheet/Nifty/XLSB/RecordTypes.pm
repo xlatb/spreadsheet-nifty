@@ -6,13 +6,33 @@ package Spreadsheet::Nifty::XLSB::RecordTypes;
 
 use constant
 {
+  ROW_HDR              => 0x0000,  # BrtRowHdr
+  CELL_BLANK           => 0x0001,  # BrtCellBlank
+  CELL_RK              => 0x0002,  # BrtCellRk
+  CELL_ERROR           => 0x0003,  # BrtCellError
+  CELL_BOOL            => 0x0004,  # BrtCellBool
+  CELL_REAL            => 0x0005,  # BrtCellReal
+  CELL_ST              => 0x0006,  # BrtCellSt
+  CELL_ISST            => 0x0007,  # BrtCellIsst
+  FMLA_STRING          => 0x0008,  # BrtFmlaString
+  FMLA_NUM             => 0x0009,  # BrtFmlaNum
+  FMLA_BOOL            => 0x000A,  # BrtFmlaBool
+  FMLA_ERROR           => 0x000B,  # BrtFmlaError
   SST_ITEM             => 0x0013,  # BrtSSTItem
+  FRT_BEGIN            => 0x0023,  # BrtFRTBegin
+  FRT_END              => 0x0024,  # BrtFRTEnd
+  AC_BEGIN             => 0x0025,  # BrtACBegin
+  AC_END               => 0x0026,  # BrtACEnd
   FONT                 => 0x002B,  # BrtFont
   FMT                  => 0x002C,  # BrtFmt
   FILL                 => 0x002D,  # BrtFill
   BORDER               => 0x002E,  # BrtBorder
   XF                   => 0x002F,  # BrtXF
   STYLE                => 0x0030,  # BrtStyle
+  CELL_RSTRING         => 0x003E,  # BrtCellRString
+  END_SHEET_DATA       => 0x0092,  # BrtEndSheetData
+  ARR_FMLA             => 0x01AA,  # BrtArrFmla
+  SHR_FMLA             => 0x01AB,  # BrtShrFmla
   BEGIN_COLOR_PALETTE  => 0x01D9,  # BrtBeginColorPalette
   END_COLOR_PALETTE    => 0x01DA,  # BrtEndColorPalette
   INDEXED_COLOR        => 0x01DB,  # BrtIndexedColor
@@ -106,6 +126,7 @@ my $xlsbRecordNames =
    '362' => 'BrtExternSheet',
    '390' => 'BrtBeginColInfos',
    '391' => 'BrtEndColInfos',
+   '426' => 'BrtArrFmla',
    '427' => 'BrtShrFmla',
    '461' => 'BrtBeginConditionalFormatting',
    '462' => 'BrtEndConditionalFormatting',
