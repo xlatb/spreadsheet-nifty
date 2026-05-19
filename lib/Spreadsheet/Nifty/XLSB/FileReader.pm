@@ -31,6 +31,7 @@ sub new()
   $self->{relationships} = undef;
   $self->{sharedStrings} = undef;
   $self->{styles}        = undef;
+  $self->{externals}     = {links => [], sheets => []};
 #  $self->{worksheets}    = undef;
   
   bless($self, $class);
@@ -87,10 +88,6 @@ sub read()
   ($self->{debug}) && printf("FileReader readStyles\n");
   $self->readStyles();
   
-  #($self->{debug}) && printf("FileReader readStyles\n");
-  #$self->readStyles();
-  #($self->{debug}) && print main::Dumper($self->{numberFormats});
-
   #for my $sheet (@{$self->{worksheets}})
   #{
   #  ($self->{debug}) && printf("readWorksheet\n");
@@ -164,23 +161,28 @@ sub readWorkbook()
   (!$reader) && die("Couldn't open member '$self->{workbook}->{partname}'\n");
 
   my $recs = Spreadsheet::Nifty::XLSB::RecordReader->new($reader);
-  while (my $rec = $recs->read())
+  while (defined(my $rec = $recs->read()))
   {
-    ($self->{debug}) && printf("REC type %d size %d name %s\n", $rec->{type}, $rec->{size}, $rec->{name} // '?');
+    ($self->{debug}) && printf("readWorkbook(): REC type %d size %d name %s\n", $rec->{type}, $rec->{size}, $rec->{name} // '?');
     ($self->{debug}) && ($rec->{size}) && printf("  data: %s\n", unpack('H*', $rec->{data}));
 
-    if ($rec->{name} eq 'BrtAbsPath15')
+    if ($rec->{type} == Spreadsheet::Nifty::XLSB::RecordTypes::ABS_PATH_15)
     {
       my $decoder = Spreadsheet::Nifty::XLSB::Decode->decoder($rec->{data});
       my $path = $decoder->decodeField('XLWideString');  # Original file path
     }
-    elsif ($rec->{name} eq 'BrtBundleSh')
+    elsif ($rec->{type} == Spreadsheet::Nifty::XLSB::RecordTypes::BUNDLE_SH)
     {
+      # TODO: Check for record BEGIN_BUNDLE_SHS and then read contents
       my $decoder = Spreadsheet::Nifty::XLSB::Decode->decoder($rec->{data});
       my $sheet = $decoder->decodeHash(['hsState:u32', 'iTabID:u32', 'strRelID:XLNullableWideString', 'strName:XLWideString']);
       (!defined($self->{workbook}->{sheets})) && do { $self->{workbook}->{sheets} = []; };
       push(@{$self->{workbook}->{sheets}}, $sheet);
       ($self->{debug}) && print main::Dumper($sheet);
+    }
+    elsif ($rec->{type} == Spreadsheet::Nifty::XLSB::RecordTypes::BEGIN_EXTERNALS)
+    {
+      $self->readWorkbookExternals($recs);
     }
   }
 
@@ -189,6 +191,59 @@ sub readWorkbook()
   ($self->{debug}) && print main::Dumper($self->{workbook}->{relationships});
 
   return 1;
+}
+
+sub readWorkbookExternals($)
+{
+  my $self = shift();
+  my ($recs) = @_;
+
+  $self->{externals}->{links} = [];
+  $self->{externals}->{sheets} = [];
+
+  while (defined(my $rec = $recs->read()))
+  {
+    ($self->{debug}) && printf("readWorkbookExternals(): REC type %d size %d name %s\n", $rec->{type}, $rec->{size}, $rec->{name} // '?');
+
+    if ($rec->{type} == Spreadsheet::Nifty::XLSB::RecordTypes::END_EXTERNALS)
+    {
+      return !!1;  # All done
+    }
+    elsif ($rec->{type} == Spreadsheet::Nifty::XLSB::RecordTypes::SUP_SELF)
+    {
+      my $link = {type => 'workbook-self'};
+      push(@{$self->{externals}->{links}}, $link);
+    }
+    elsif ($rec->{type} == Spreadsheet::Nifty::XLSB::RecordTypes::SUP_SAME)
+    {
+      my $link = {type => 'sheet-self'};
+      push(@{$self->{externals}->{links}}, $link);
+    }
+    elsif ($rec->{type} == Spreadsheet::Nifty::XLSB::RecordTypes::SUP_BOOK_SRC)
+    {
+      my $decoder = Spreadsheet::Nifty::XLSB::Decode->decoder($rec->{data});
+      my $link = {type => 'external'};
+      $link->{relId} = $decoder->decodeField('relID:XLNullableWideString');
+      push(@{$self->{externals}->{links}}, $link);
+    }
+    elsif ($rec->{type} == Spreadsheet::Nifty::XLSB::RecordTypes::SUP_ADDIN)
+    {
+      my $link = {type => 'addin', rec => $rec};
+      push(@{$self->{externals}->{links}}, $link);
+    }
+    elsif ($rec->{type} == Spreadsheet::Nifty::XLSB::RecordTypes::EXTERN_SHEET)
+    {
+      my $decoder = Spreadsheet::Nifty::XLSB::Decode->decoder($rec->{data});
+      my $count = $decoder->decodeField('u32');
+      for (my $i = 0; $i < $count; $i++)
+      {
+        my $sheet = $decoder->decodeHash(['linkId:u32', 'minSheet:i32', 'maxSheet:i32']);
+        push(@{$self->{externals}->{sheets}}, $sheet);
+      }
+    }
+  }
+
+  return !!0;  # EOF before finding BrtEndExternals
 }
 
 sub openSheet($)

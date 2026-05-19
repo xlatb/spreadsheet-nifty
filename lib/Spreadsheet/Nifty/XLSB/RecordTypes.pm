@@ -23,6 +23,7 @@ use constant
   FRT_END              => 0x0024,  # BrtFRTEnd
   AC_BEGIN             => 0x0025,  # BrtACBegin
   AC_END               => 0x0026,  # BrtACEnd
+  NAME                 => 0x0027,  # BrtName
   FONT                 => 0x002B,  # BrtFont
   FMT                  => 0x002C,  # BrtFmt
   FILL                 => 0x002D,  # BrtFill
@@ -30,7 +31,17 @@ use constant
   XF                   => 0x002F,  # BrtXF
   STYLE                => 0x0030,  # BrtStyle
   CELL_RSTRING         => 0x003E,  # BrtCellRString
+  BEGIN_BUNDLE_SHS     => 0x008F,  # BrtBeginBundleShs
+  END_BUNDLE_SHS       => 0x0090,  # BrtEndBundleShs
   END_SHEET_DATA       => 0x0092,  # BrtEndSheetData
+  BUNDLE_SH            => 0x009C,  # BrtBundleSh
+  BEGIN_EXTERNALS      => 0x0161,  # BrtBeginExternals
+  END_EXTERNALS        => 0x0162,  # BrtEndExternals
+  SUP_BOOK_SRC         => 0x0163,  # BrtSupBookSrc
+  SUP_SELF             => 0x0165,  # BrtSupSelf
+  SUP_SAME             => 0x0166,  # BrtSupSame
+  SUP_TABS             => 0x0167,  # BrtSupTabs
+  EXTERN_SHEET         => 0x016A,  # BrtExternSheet
   ARR_FMLA             => 0x01AA,  # BrtArrFmla
   SHR_FMLA             => 0x01AB,  # BrtShrFmla
   BEGIN_COLOR_PALETTE  => 0x01D9,  # BrtBeginColorPalette
@@ -54,6 +65,8 @@ use constant
   END_STYLES           => 0x026C,  # BrtEndStyles
   BEGIN_CELL_STYLE_XFS => 0x0272,  # BrtBeginCellStyleXFs
   END_CELL_STYLE_XFS   => 0x0273,  # BrtEndCellStyleXFs
+  SUP_ADDIN            => 0x029B,  # BrtSupAddin
+  ABS_PATH_15          => 0x0817,  # BrtAbsPath15
 };
 
 my $xlsbRecordNames =
@@ -180,6 +193,7 @@ my $xlsbRecordNames =
    '660' => 'BrtBeginListParts',
    '661' => 'BrtListPart',
    '662' => 'BrtEndListParts',
+   '667' => 'BrtSupAddin',
    '678' => 'BrtSheetProtectionIso',
   '1024' => 'BrtRwDescent',
   '1025' => 'BrtKnownFonts',
