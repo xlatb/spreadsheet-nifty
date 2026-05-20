@@ -380,6 +380,22 @@ sub getSharedFormula($$)
   return $self->{sharedFormulas}->{$key};
 }
 
+sub getExternalSheetReference($)
+{
+  my $self = shift();
+  my ($index) = @_;
+
+  my $ref = $self->{workbook}->getExternalSheetReference($index);
+  (!defined($ref)) && return undef;
+
+  if ($ref->{externalLink}->{type} eq 'workbook-self')
+  {
+    return {type => 'workbook-self', minSheet => $ref->{externalSheet}->{minSheet}, maxSheet => $ref->{externalSheet}->{maxSheet}}
+  }
+
+  ...;
+}
+
 # Reads a row of cells
 sub readRowInternal()
 {
@@ -625,6 +641,13 @@ sub getColDimensions()
   my $self = shift();
 
   return [$self->{dimensions}->{mincol}, $self->{dimensions}->{maxcol}];
+}
+
+sub workbook()
+{
+  my $self = shift();
+
+  return $self->{workbook};
 }
 
 1;

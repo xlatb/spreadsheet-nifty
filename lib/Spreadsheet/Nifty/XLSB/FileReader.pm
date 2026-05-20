@@ -279,4 +279,19 @@ sub getSheetCount()
   return scalar(@{$self->{workbook}->{sheets}});
 }
 
+sub getExternalSheetReference($)
+{
+  my $self = shift();
+  my ($index) = @_;
+
+  (($index < 0) || ($index >= scalar(@{$self->{externals}->{sheets}}))) && return undef;  # External sheet out of bounds
+  my $externalSheet = $self->{externals}->{sheets}->[$index];
+
+  my $linkId = $externalSheet->{linkId};
+  (($linkId < 0) || ($linkId >= scalar(@{$self->{externals}->{links}}))) && return undef;  # External link out of bounds
+  my $externalLink = $self->{externals}->{links}->[$linkId];
+
+  return {externalSheet => $externalSheet, externalLink => $externalLink};
+}
+
 1;

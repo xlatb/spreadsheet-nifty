@@ -56,7 +56,7 @@ sub buildCell($)
     $private->{f} = $data->{formula};
   }
 
-  my $cell = Spreadsheet::Nifty::XLSB::Cell->new($data->{dataType}, $data->{value}, $self, $private);
+  my $cell = Spreadsheet::Nifty::XLSB::Cell->new($data->{dataType}, $data->{value}, $self->{sheetReader}, $private);
   return $cell;
 }
 

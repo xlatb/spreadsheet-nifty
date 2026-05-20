@@ -94,7 +94,7 @@ sub decodeCellRef3d($)
   my $self = shift();
   my ($decoder) = @_;
 
-  my $ref = {};
+  my $ref;
 
   if ($self->{version} == Spreadsheet::Nifty::BIFF::Constants::BIFF_V5)
   {
@@ -103,13 +103,13 @@ sub decodeCellRef3d($)
   elsif ($self->{version} == Spreadsheet::Nifty::BIFF::Constants::BIFF_V8)
   {
     my $sheetIndex = $decoder->decodeField('u16');  # Index into EXTERNSHEET
-    my $ref = $self->decodeCellRef2d($decoder);
+    $ref = $self->decodeCellRef2d($decoder);
     $ref->{sheetIndex} = $sheetIndex;
   }
   elsif ($self->{version} == Spreadsheet::Nifty::BIFF::Constants::BIFF_V12)
   {
     my $sheetIndex = $decoder->decodeField('u16');
-    my $ref = $self->decodeCellRef2d($decoder);
+    $ref = $self->decodeCellRef2d($decoder);
     $ref->{sheetIndex} = $sheetIndex;
   }
   else
@@ -215,7 +215,7 @@ sub decode($$)
         }
         elsif ($self->{version} == Spreadsheet::Nifty::BIFF::Constants::BIFF_V12)
         {
-          # BIFF12 splits the row and column numbers between the main stream and extra stream
+          # NOTE: BIFF12 splits the row and column numbers between the main stream and extra stream
           $token->{exp}->{row} = $decoder->decodeField('u32');
           $token->{exp}->{col} = $extraDecoder->decodeField('u32');
         }

@@ -5,6 +5,7 @@ use strict;
 package Spreadsheet::Nifty::Utils;
 use Spreadsheet::Nifty::DateUtils;
 
+use Encode qw();
 use POSIX qw();
 
 # POSIX epoch 1970-01-01 as an Excel day number, measured from different base years.
@@ -227,6 +228,94 @@ sub stringToCellRef($)
   my $row = int($2) - 1;
 
   return {col => $col, row => $row};
+}
+
+# Returns true if the string is suitable for use as an unquoted sheet name.
+# https://stackoverflow.com/questions/41677779/when-does-excel-surround-sheet-names-with-single-quotes-in-workbook-xml-or-othe
+sub isSheetNamePermissibleUnquoted($)
+{
+  my $class = shift();
+  my ($name) = @_;
+
+  if ($name =~ m#[^\w\.]#)  # Any non-word or period characters
+  {
+    return !!0;
+  }
+  elsif ($name =~ m#^[\d\.]#)  # Starts with period or decimal digit
+  {
+    return !!0;
+  }
+  elsif ($name =~ m#^[A-Z]{1,3}[0-9]+$#i)  # Looks like an A1-style cell reference
+  {
+    return !!0;
+  }
+  elsif ($name =~ m#^(R[0-9]+|C[0-9]+|RC[0-9]+|R$|C$|RC$)#i)  # Starts with an R1 or C1-style cell reference
+  {
+    return !!0;
+  }
+
+  return !!1;
+}
+
+# Given a string that could be a sheet name, returns the quoted form if
+#  it requires quoting.
+sub quoteSheetNameIfNeeded($)
+{
+  my $class = shift();
+  my ($name) = @_;
+
+  ($class->isSheetNamePermissibleUnquoted($name)) && return $name;
+
+  return sprintf("'%s'", $name =~ s/'/''/gr);
+}
+
+sub hexDump($)
+{
+  my $class = shift();
+  my ($bytes) = @_;
+
+  my $length = length($bytes);
+
+  my $bytesPerChunk = 16;
+  my $offset = 0;
+
+  my $lines = [];
+  while ($offset < $length)
+  {
+    my $chunk = substr($bytes, $offset, $bytesPerChunk);
+    my $chunkLength = length($chunk);
+    my $hex = '';
+    my $chars = '';
+    for (my $i = 0; $i < $bytesPerChunk; $i++)
+    {
+      ($i >= $chunkLength) && last;
+
+      my $byte = substr($chunk, $i, 1);
+      my $ord = ord($byte);
+
+      $hex .= sprintf("%02X ", $ord);
+
+      if (($ord >= 32) && ($ord <= 126))
+      {
+        $chars .= $byte;
+      }
+      elsif (($ord >= 160) && ($ord <= 255))
+      {
+        $chars .= Encode::decode('iso-8859-1', $byte);
+      }
+      else
+      {
+        $chars .= "\xB7";
+      }
+    }
+
+    my $line = sprintf("%8X  %-48s  %s\n", $offset, $hex, $chars);
+    push(@{$lines}, $line);
+
+    $offset += $bytesPerChunk;
+  }
+
+  return $lines;
 }
 
 1;

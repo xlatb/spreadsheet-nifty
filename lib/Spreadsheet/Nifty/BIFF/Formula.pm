@@ -4,6 +4,7 @@ use strict;
 
 package Spreadsheet::Nifty::BIFF::Formula;
 
+use Spreadsheet::Nifty::Utils;
 use Spreadsheet::Nifty::BIFF::FormulaTokens;
 
 # === Class methods ===
@@ -52,8 +53,10 @@ sub unparse($)
       if ($t->{id} == 0x01)
       {
         # tExp - References a shared formula on the current sheet
-        (!defined($context->{getSharedFormula})) && die("Found reference to shared formula but context has no shared formula getter");
-        my $sharedFormula = $context->{getSharedFormula}->($t->{exp}->{col}, $t->{exp}->{row});
+        my $sheetReader = $context->{sheetReader};
+        (!defined($sheetReader)) && die("Found reference to shared formula but context has no sheet reader");
+        (!$sheetReader->can('getSharedFormula')) && die("Found reference to shared formula, but sheet reader does not resolve them");
+        my $sharedFormula = $sheetReader->getSharedFormula($t->{exp}->{col}, $t->{exp}->{row});
         (!defined($sharedFormula)) && return undef;  # No such shared formula?
 
         my $colOffset = $context->{col} - $t->{exp}->{col};
@@ -237,8 +240,42 @@ sub unparse($)
       }
       elsif ($t->{id} == 0x1A)
       {
-        # tRef3d
-        ...;  # TODO: Needs to look up external sheet name(s)
+        # tRef3d - 3d reference stored as absolute
+        my $sheetReader = $context->{sheetReader};
+        (!defined($sheetReader)) && die("Found reference to external sheet but context has no sheet reader");
+        (!$sheetReader->can('getExternalSheetReference')) && die("Found reference to external sheet, but sheet reader does not resolve them");
+
+        my $sheetRef = $sheetReader->getExternalSheetReference($t->{ref}->{sheetIndex});
+        (!defined($sheetRef)) && die("Could not resolve external sheet reference");
+        if ($sheetRef->{type} eq 'workbook-self')
+        {
+          my $sheetNames = $sheetReader->workbook()->getSheetNames();
+          (($sheetRef->{minSheet} < 0) || ($sheetRef->{minSheet} >= scalar(@{$sheetNames}))) && die("Reference to external sheet starting sheet is out of range");
+          (($sheetRef->{maxSheet} < 0) || ($sheetRef->{maxSheet} >= scalar(@{$sheetNames}))) && die("Reference to external sheet ending sheet is out of range");
+
+          my $str = '';
+          if ($sheetRef->{minSheet} == $sheetRef->{maxSheet})
+          {
+            $str = Spreadsheet::Nifty::Utils->quoteSheetNameIfNeeded($sheetNames->[$sheetRef->{minSheet}]) . '!';
+          }
+          else
+          {
+            $str = sprintf("%s:%s!",
+             Spreadsheet::Nifty::Utils->quoteSheetNameIfNeeded($sheetNames->[$sheetRef->{minSheet}]),
+             Spreadsheet::Nifty::Utils->quoteSheetNameIfNeeded($sheetNames->[$sheetRef->{maxSheet}]));
+          }
+
+          $str .= sprintf("%s%s%s%s",
+           $t->{ref}->{relCol} ? '' : '$',
+           Spreadsheet::Nifty::Utils->colIndexToString($t->{ref}->{col}),
+           ((!$t->{ref}->{relRow}) ? '$' : ''),
+           int($t->{ref}->{row} + 1));
+          push(@{$stack}, $str);
+        }
+        else
+        {
+          ...;
+        }
       }
       else
       {

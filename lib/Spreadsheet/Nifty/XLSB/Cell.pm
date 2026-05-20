@@ -92,6 +92,9 @@ sub fgColor()
   my $xf = $self->{ctx}->()->{workbook}->{styles}->getXf($self->{p}->{xf});
   (!defined($xf)) && return undef;
 
+  # TODO: I suspect the text colour is elsewhere!
+  return undef;
+
   my $fill = $self->{ctx}->()->{workbook}->{styles}->getFill($xf->{fillId});
   (!defined($fill)) && return undef;
 
@@ -110,8 +113,11 @@ sub bgColor()
 
   my $fill = $self->{ctx}->()->{workbook}->{styles}->getFill($xf->{fillId});
   (!defined($fill)) && return undef;
+  ($fill->{pattern} == 0) && return undef;  # Fill pattern of 'none'
 
-  my $color = $self->resolveColor($fill->{bgColor});
+  # NOTE: We grab the foreground colour *of the fill*, which we are calling
+  #  the background colour.
+  my $color = $self->resolveColor($fill->{fgColor});
   (!defined($color)) && return undef;
 
   return sprintf("%02X%02X%02X%02X", $color->{r}, $color->{g}, $color->{b}, $color->{a});
@@ -133,7 +139,7 @@ sub formula()
   # TODO: Retrieve a formulaDecoder from the context
   my $formula = $formulaDecoder->decode($self->{p}->{f}->{tokenStream}, $self->{p}->{f}->{extra});
   #print main::Dumper($formula);
-  my $context = {col => $self->{p}->{x}, row => $self->{p}->{y}, getSharedFormula => sub { $self->{ctx}->()->{sheetReader}->getSharedFormula(@_) } };
+  my $context = {col => $self->{p}->{x}, row => $self->{p}->{y}, sheetReader => $self->{ctx}->()};
 
   return $formula->unparse($context);
 }
