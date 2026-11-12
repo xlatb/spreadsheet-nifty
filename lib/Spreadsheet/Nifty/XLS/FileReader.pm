@@ -8,6 +8,7 @@ use IO::File;
 use Encode qw();
 
 use Spreadsheet::Nifty::CDF;
+use Spreadsheet::Nifty::ExcelDefaultFormats;
 use Spreadsheet::Nifty::XLS;
 use Spreadsheet::Nifty::XLS::BIFFReader;
 use Spreadsheet::Nifty::XLS::RecordTypes;
@@ -134,16 +135,33 @@ sub read()
   return 1;
 }
 
+sub getXf($)
+{
+  my $self = shift();
+  my ($i) = @_;
+
+  return $self->{workbook}->{xfs}->[$i];
+}
+
+sub getNumberFormat($)
+{
+  my $self = shift();
+  my ($i) = @_;
+
+  return $self->{workbook}->{numberFormats}->{$i};
+}
+
 sub readWorkbookStream($)
 {
   my $self = shift();
 
   $self->{workbook} = {};
-  $self->{workbook}->{fonts}       = [];
-  $self->{workbook}->{formats}     = [];
-  $self->{workbook}->{styles}      = [];
-  $self->{workbook}->{boundsheets} = [];
-  $self->{workbook}->{strings}     = [];
+  $self->{workbook}->{fonts}         = [];
+  $self->{workbook}->{xfs}           = [];
+  $self->{workbook}->{numberFormats} = Spreadsheet::Nifty::ExcelDefaultFormats->getFormats();
+  $self->{workbook}->{styles}        = [];
+  $self->{workbook}->{boundsheets}   = [];
+  $self->{workbook}->{strings}       = [];
 
   $self->{offsets}->{workbook} = {};
 
@@ -245,7 +263,8 @@ sub readWorkbookStream($)
     #elsif ($rec->{name} eq 'Format')
     elsif ($rec->{type} == Spreadsheet::Nifty::XLS::RecordTypes::FORMAT)
     {
-      push(@{$self->{workbook}->{formats}}, Spreadsheet::Nifty::XLS::Decode::decodeFormat($rec->{payload}, $biffVersion));
+      my $numberFormat = Spreadsheet::Nifty::XLS::Decode::decodeFormat($rec->{payload}, $biffVersion);
+      $self->{workbook}->{numberFormats}->{$numberFormat->{id}} = $numberFormat->{format};
     }
     #elsif ($rec->{name} eq 'DXF')
     elsif ($rec->{type} == Spreadsheet::Nifty::XLS::RecordTypes::DXF)

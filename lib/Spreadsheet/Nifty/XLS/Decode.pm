@@ -269,7 +269,7 @@ sub decodeXF($$)
   my ($bytes, $version) = @_;
 
   my $decoder = StructDecoder->new($bytes);
-  my $xf = $decoder->decodeHash(['font:u16', 'format:u16', 'flags:u16']);
+  my $xf = $decoder->decodeHash(['font:u16', 'numberFormatId:u16', 'flags:u16']);
   $xf->{parent} = $xf->{flags} & 0x0FFF;
   $xf->{version} = $version;
 

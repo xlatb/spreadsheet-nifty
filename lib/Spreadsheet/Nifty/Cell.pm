@@ -2,6 +2,8 @@
 use warnings;
 use strict;
 
+use Scalar::Util qw();
+
 package Spreadsheet::Nifty::Cell;
 
 use Storable qw();

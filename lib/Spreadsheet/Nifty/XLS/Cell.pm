@@ -50,7 +50,13 @@ sub formatString()
 {
   my $self = shift();
 
-  return undef;  #TODO
+  (!defined($self->{p}->{xf})) && return undef;  # No direct style
+
+  my $xf = $self->{ctx}->()->workbook()->getXf($self->{p}->{xf});
+  (!defined($xf->{numberFormatId})) && return undef;  # No number format applied
+
+  my $numberFormat = $self->{ctx}->()->workbook()->getNumberFormat($xf->{numberFormatId});
+  return $numberFormat;
 }
 
 sub formula()
