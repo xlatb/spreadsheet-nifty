@@ -18,15 +18,18 @@ use Spreadsheet::Nifty::ZIPPackage;
 
 # === Class methods ===
 
-sub new()
+sub new($)
 {
   my $class = shift();
+  my ($opts) = @_;
+
+  $opts //= {};
   
   my $self = {};
   $self->{filename}      = undef;
   $self->{zipPackage}    = Spreadsheet::Nifty::ZIPPackage->new();
   $self->{members}       = {};
-  $self->{debug}         = 0;
+  $self->{debug}         = $opts->{debug};
   $self->{workbook}      = undef;
   $self->{relationships} = undef;
   $self->{sharedStrings} = undef;

@@ -15,13 +15,15 @@ use Spreadsheet::Nifty::XLS::SheetReader;
 use Spreadsheet::Nifty::XLS::Sheet;
 use Spreadsheet::Nifty::XLS::Decode;
 use Spreadsheet::Nifty::XLS::Crypto;
-use Spreadsheet::Nifty::XLS::Formula;
 
 # === Class methods ===
 
-sub new()
+sub new($)
 {
   my $class = shift();
+  my ($opts) = @_;
+
+  $opts //= {};
   
   my $self = {};
   $self->{filename}   = undef;
@@ -31,9 +33,9 @@ sub new()
   $self->{workbook}   = undef;
   $self->{strings}    = undef;
   $self->{offsets}    = {};
-  $self->{debug}      = 0;
+  $self->{debug}      = $opts->{debug};
   $self->{sheetCount} = undef;
-  $self->{password}   = undef;
+  $self->{password}   = $opts->{password};
 #  $self->{worksheets}    = undef;
   
   bless($self, $class);
@@ -83,15 +85,6 @@ sub setPassword($)
   my ($password) = @_;
 
   $self->{password} = $password;
-  return;
-}
-
-sub setDebug($)
-{
-  my $self = shift();
-  my ($debug) = @_;
-
-  $self->{debug} = $debug;
   return;
 }
 
@@ -539,7 +532,7 @@ sub readXLUnicodeRichExtendedString($)
       #printf("Time for a Continue section!\n");
       my $rec = $self->{biff}->readRecord();
       (!defined($rec)) && die("decodeXLUnicodeRichExtendedString(): Expected a following Continue record, got EOF");
-      ($rec->{type} != 0x003C) && die("decodeXLUnicodeRichExtendedString(): Expected a following Continue record, got record type $rec->{type}");
+      ($rec->{type} != Spreadsheet::Nifty::XLS::RecordTypes::CONTINUE) && die("decodeXLUnicodeRichExtendedString(): Expected a following Continue record, got record type $rec->{type}");
       $decoder->setBytes($rec->{payload});
       $ucs2 = $decoder->decodeField('u8');  # Read new UCS-2 flag
       #printf("UCS2 value: %d\n", $ucs2);
@@ -558,7 +551,7 @@ sub readXLUnicodeRichExtendedString($)
 #      #printf("Time for a Continue section! (in rgRun)\n");
 #      my $rec = $biff->readRecord();
 #      (!defined($rec)) && die("decodeXLUnicodeRichExtendedString(): Expected a following Continue record, got EOF");
-#      ($rec->{type} != 0x003C) && die("decodeXLUnicodeRichExtendedString(): Expected a following Continue record, got record type $rec->{type}");
+#      ($rec->{type} != Spreadsheet::Nifty::XLS::RecordTypes::CONTINUE) && die("decodeXLUnicodeRichExtendedString(): Expected a following Continue record, got record type $rec->{type}");
 #      $decoder->appendBytes($rec->{payload});
 #    }
     $data->{rgRun} = $decoder->decodeArray(['ich:u16', 'ifnt:u16'], $data->{cRun});

@@ -91,10 +91,12 @@ sub errorNumber($)
 }
 
 # Given a filename, returns a FileReader object or undef if the file is unsupported.
-sub reader($)
+sub reader($;$)
 {
   my $class = shift();
-  my ($filename) = @_;
+  my ($filename, $opts) = @_;
+
+  $opts //= {};
 
   for my $r (@{$readers})
   {
@@ -104,7 +106,7 @@ sub reader($)
     require($readerPath);
     (!$r->{class}->isFileSupported($filename)) && next;
 
-    my $reader = $r->{class}->new();
+    my $reader = $r->{class}->new($opts);
     return $reader;
   }
 

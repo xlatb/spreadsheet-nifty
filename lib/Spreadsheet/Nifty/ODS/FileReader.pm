@@ -20,6 +20,9 @@ use Data::Dumper;
 sub new()
 {
   my $class = shift();
+  my ($opts) = @_;
+
+  $opts //= {};
   
   my $self = {};
   $self->{odf}      = Spreadsheet::Nifty::OpenDocument->new();
@@ -27,7 +30,7 @@ sub new()
   $self->{workbook} = {};
   $self->{parked}   = [];
   $self->{styles}   = {'content.auto' => undef, 'styles.auto' => undef, 'styles.named' => undef};
-  $self->{debug}    = 0;
+  $self->{debug}    = $opts->{debug};
   
   bless($self, $class);
 

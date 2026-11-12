@@ -20,10 +20,13 @@ use Data::Dumper;
 sub new()
 {
   my $class = shift();
+  my ($opts) = @_;
+
+  $opts //= {};
   
   my $self = {};
   $self->{zipPackage}    = Spreadsheet::Nifty::ZIPPackage->new();
-  $self->{debug}         = 0;
+  $self->{debug}         = $opts->{debug};
   $self->{workbook}      = undef;
   $self->{sharedStrings} = undef;
   $self->{relationships} = undef;
