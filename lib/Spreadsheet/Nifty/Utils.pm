@@ -237,7 +237,7 @@ sub isSheetNamePermissibleUnquoted($)
   my $class = shift();
   my ($name) = @_;
 
-  if ($name =~ m#[^\w\.]#)  # Any non-word or period characters
+  if ($name =~ m#[^\w\.]#u)  # Any non-word or period characters (Unicode okay)
   {
     return !!0;
   }
@@ -251,6 +251,12 @@ sub isSheetNamePermissibleUnquoted($)
   }
   elsif ($name =~ m#^(R[0-9]+|C[0-9]+|RC[0-9]+|R$|C$|RC$)#i)  # Starts with an R1 or C1-style cell reference
   {
+    # NOTE: The tests for "R", "C", and "RC" are anchored at the end because
+    #  they must appear as complete strings to require quoting.
+    # If there is a number, we don't anchor because a name like "R1test" will
+    #  require quoting.
+    # Relative R1 references can also look like "R[-1]", but those would
+    #  already be caught above for having non-word characters.
     return !!0;
   }
 

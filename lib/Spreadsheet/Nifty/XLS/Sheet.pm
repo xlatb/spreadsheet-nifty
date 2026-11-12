@@ -76,45 +76,45 @@ sub readRow()
   {
     if ($cell->{type} == Spreadsheet::Nifty::XLS::RecordTypes::BLANK)
     {
-      $row->[$cell->{col}] = Spreadsheet::Nifty::XLS::Cell->new(Spreadsheet::Nifty::TYPE_NULL);
+      $row->[$cell->{col}] = Spreadsheet::Nifty::XLS::Cell->new(Spreadsheet::Nifty::TYPE_NULL, undef, $self->{reader}, $cell);
     }
     elsif ($cell->{type} == Spreadsheet::Nifty::XLS::RecordTypes::LABEL)
     {
-      $row->[$cell->{col}] = Spreadsheet::Nifty::XLS::Cell->new(Spreadsheet::Nifty::TYPE_STR, $cell->{str});
+      $row->[$cell->{col}] = Spreadsheet::Nifty::XLS::Cell->new(Spreadsheet::Nifty::TYPE_STR, $cell->{str}, $self->{reader}, $cell);
     }
     elsif ($cell->{type} == Spreadsheet::Nifty::XLS::RecordTypes::LABEL_SST)
     {
       my $str = $self->{workbook}->{workbook}->{strings}->[$cell->{si}]->{str};
-      $row->[$cell->{col}] = Spreadsheet::Nifty::XLS::Cell->new(Spreadsheet::Nifty::TYPE_STR, $str);
+      $row->[$cell->{col}] = Spreadsheet::Nifty::XLS::Cell->new(Spreadsheet::Nifty::TYPE_STR, $str, $self->{reader}, $cell);
     }
     elsif ($cell->{type} == Spreadsheet::Nifty::XLS::RecordTypes::RSTRING)
     {
-      $row->[$cell->{col}] = Spreadsheet::Nifty::XLS::Cell->new(Spreadsheet::Nifty::TYPE_STR, $cell->{str});
+      $row->[$cell->{col}] = Spreadsheet::Nifty::XLS::Cell->new(Spreadsheet::Nifty::TYPE_STR, $cell->{str}, $self->{reader}, $cell);
     }
     elsif ($cell->{type} == Spreadsheet::Nifty::XLS::RecordTypes::RK)
     {
       my $num = Spreadsheet::Nifty::Utils->translateRk($cell->{rk});
-      $row->[$cell->{col}] = Spreadsheet::Nifty::XLS::Cell->new(Spreadsheet::Nifty::TYPE_NUM, $num);
+      $row->[$cell->{col}] = Spreadsheet::Nifty::XLS::Cell->new(Spreadsheet::Nifty::TYPE_NUM, $num, $self->{reader}, $cell);
     }
     elsif ($cell->{type} == Spreadsheet::Nifty::XLS::RecordTypes::NUMBER)
     {
-      $row->[$cell->{col}] = Spreadsheet::Nifty::XLS::Cell->new(Spreadsheet::Nifty::TYPE_NUM, $cell->{num});
+      $row->[$cell->{col}] = Spreadsheet::Nifty::XLS::Cell->new(Spreadsheet::Nifty::TYPE_NUM, $cell->{num}, $self->{reader}, $cell);
     }
     elsif ($cell->{type} == Spreadsheet::Nifty::XLS::RecordTypes::FORMULA)
     {
       my $data = $self->decodeFormulaResult($cell);
       $data->{f} = $cell->{formula};
-      $row->[$cell->{col}] = Spreadsheet::Nifty::XLS::Cell->new($data->{t}, $data->{v});
+      $row->[$cell->{col}] = Spreadsheet::Nifty::XLS::Cell->new($data->{t}, $data->{v}, $self->{reader}, $cell);
     }
     elsif ($cell->{type} == Spreadsheet::Nifty::XLS::RecordTypes::BOOL_ERR)
     {
       if ($cell->{datatype} == 0)
       {
-        $row->[$cell->{col}] = Spreadsheet::Nifty::XLS::Cell->new(Spreadsheet::Nifty::TYPE_BOOL, $cell->{value});
+        $row->[$cell->{col}] = Spreadsheet::Nifty::XLS::Cell->new(Spreadsheet::Nifty::TYPE_BOOL, $cell->{value}, $self->{reader}, $cell);
       }
       elsif ($cell->{datatype} == 1)
       {
-        $row->[$cell->{col}] = Spreadsheet::Nifty::XLS::Cell->new(Spreadsheet::Nifty::TYPE_ERR, $cell->{value});
+        $row->[$cell->{col}] = Spreadsheet::Nifty::XLS::Cell->new(Spreadsheet::Nifty::TYPE_ERR, $cell->{value}, $self->{reader}, $cell);
       }
       else
       {
@@ -126,14 +126,14 @@ sub readRow()
       for (my $i = 0; $i < scalar(@{$cell->{recs}}); $i++)
       {
         my $v = Spreadsheet::Nifty::Utils->translateRk($cell->{recs}->[$i]->{rk});
-        $row->[$cell->{minCol} + $i] = Spreadsheet::Nifty::XLS::Cell->new(Spreadsheet::Nifty::TYPE_NUM, $v);
+        $row->[$cell->{minCol} + $i] = Spreadsheet::Nifty::XLS::Cell->new(Spreadsheet::Nifty::TYPE_NUM, $v, $self->{reader}, $cell);
       }
     }
     elsif ($cell->{type} == Spreadsheet::Nifty::XLS::RecordTypes::MUL_BLANK)
     {
       for (my $i = 0; $i < scalar(@{$cell->{xfs}}); $i++)
       {
-        $row->[$cell->{minCol} + $i] = Spreadsheet::Nifty::XLS::Cell->new(Spreadsheet::Nifty::TYPE_NULL);
+        $row->[$cell->{minCol} + $i] = Spreadsheet::Nifty::XLS::Cell->new(Spreadsheet::Nifty::TYPE_NULL, undef, $self->{reader}, $cell);
       }
     }
     else

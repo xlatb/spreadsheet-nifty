@@ -13,7 +13,7 @@ sub new()
   my $class = shift();
   my ($bytes) = @_;
 
-  (ref($bytes)) && die("Expected byte string");
+  (ref($bytes)) && die("Expected byte string, not '" . ref($bytes) . "': ");
 
   my $self = {};
   $self->{bytes}    = $bytes;

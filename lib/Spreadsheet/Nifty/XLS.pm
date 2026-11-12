@@ -4,6 +4,8 @@ use strict;
 
 package Spreadsheet::Nifty::XLS;
 
+use Spreadsheet::Nifty::BIFF::Constants;
+
 use constant
 {
   BOF_TYPE_WORKBOOK  => 0x05,
@@ -17,7 +19,7 @@ use constant
   BOF_VERSION_BIFF2 => 0x0200,
   BOF_VERSION_BIFF3 => 0x0300,
   BOF_VERSION_BIFF4 => 0x0400,
-  BOF_VERSION_BIFF5 => 0x0500,
+  BOF_VERSION_BIFF5 => 0x0500,  # Also used by BIFF7
   BOF_VERSION_BIFF8 => 0x0600,  # Yes, BIFF8 is stored as 6, not 8
 };
 
@@ -35,5 +37,22 @@ use constant
 
 # Excel will silently try this default password.
 our $defaultPassword = 'VelvetSweatshop';
+
+# Translate the BIFF version number as encoded in the BOF field to one of our
+#  own version constants.
+sub bofToBiffVersion($)
+{
+  my ($bof) = @_;
+
+  # NOTE: We don't use => here because we don't want to stringify the keys
+  CORE::state $versionMap =
+  {
+    BOF_VERSION_BIFF5 , Spreadsheet::Nifty::BIFF::Constants::BIFF_V5,
+    BOF_VERSION_BIFF8 , Spreadsheet::Nifty::BIFF::Constants::BIFF_V8
+  };
+
+  return $versionMap->{$bof};
+}
+
 
 1;

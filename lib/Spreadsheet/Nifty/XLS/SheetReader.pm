@@ -4,6 +4,8 @@ use strict;
 
 package Spreadsheet::Nifty::XLS::SheetReader;
 
+use Spreadsheet::Nifty::BIFF::FormulaDecoder;
+
 use Data::Dumper;
 
 # === Class methods ===
@@ -14,15 +16,17 @@ sub new()
   my ($workbook, $index, $offset, $biff) = @_;
 
   my $self = {};
-  $self->{workbook} = $workbook;
-  $self->{index}    = $index;
-  $self->{biff}     = $biff;
-  $self->{header}   = undef;
-  $self->{offsets}  = {bof => $offset, rows => [], firstCells => []};
-  $self->{lengths}  = {rows => []};
-  $self->{cache}    = {rowBlocks => []};
-  $self->{meta}     = {};
-  $self->{debug}    = $workbook->{debug};
+  $self->{workbook}       = $workbook;
+  $self->{index}          = $index;
+  $self->{biff}           = $biff;
+  $self->{header}         = undef;
+  $self->{offsets}        = {bof => $offset, rows => [], firstCells => []};
+  $self->{lengths}        = {rows => []};
+  $self->{cache}          = {rowBlocks => []};
+  $self->{meta}           = {};
+  $self->{formulaDecoder} = undef;
+  $self->{sharedFormulas} = {};
+  $self->{debug}          = $workbook->{debug};
 
   bless($self, $class);
 
@@ -40,17 +44,31 @@ sub open()
 
   $self->checkIndex();
 
+  my $biffVersion = Spreadsheet::Nifty::XLS::bofToBiffVersion($self->getBofVersion());
+  if (defined($biffVersion))
+  {
+    $self->{formulaDecoder} = Spreadsheet::Nifty::BIFF::FormulaDecoder->new($biffVersion);
+  }
+
   return $success;
 }
 
-sub getBiffVersion()
+# Returns the version number from the workbook BOF record.
+sub getBofVersion()
 {
   my $self = shift();
 
-  # NOTE: Allegedly some versions of Excel write the wrong BIFF version to
-  #  sheet streams. So we'll trust the workbook BIFF version over the sheet
-  #  version.
+  # NOTE: Allegedly some versions of Excel write the wrong version number to
+  #  sheet streams. So we'll trust the workbook version number over the sheet
+  #  version number.
   return $self->{workbook}->{workbook}->{bof}->{version};
+}
+
+sub getFormulaDecoder()
+{
+  my $self = shift();
+
+  return $self->{formulaDecoder};
 }
 
 # Checks the file's index against the row blocks.
@@ -115,7 +133,7 @@ sub readHeader()
   
   $self->{header}->{bof} = Spreadsheet::Nifty::XLS::Decode::decodeBOF($rec->{payload});
 
-  my $biffVersion = $self->getBiffVersion();
+  my $bofVersion = $self->getBofVersion();
 
   while (defined($rec = $self->{biff}->readRecord()))
   {
@@ -126,7 +144,7 @@ sub readHeader()
     }
     elsif ($rec->{type} == Spreadsheet::Nifty::XLS::RecordTypes::INDEX)
     {
-      $self->{header}->{index} = Spreadsheet::Nifty::XLS::Decode::decodeIndex($rec->{payload}, $biffVersion);
+      $self->{header}->{index} = Spreadsheet::Nifty::XLS::Decode::decodeIndex($rec->{payload}, $bofVersion);
     }
     #elsif ($rec->{name} eq 'DefaultRowHeight')
     elsif ($rec->{type} == Spreadsheet::Nifty::XLS::RecordTypes::DEFAULT_ROW_HEIGHT)
@@ -824,15 +842,11 @@ sub readRowCells($)
       if (defined($extra))
       {
         $cell->{extra} = $extra->{type};
+
         if ($extra->{type} == Spreadsheet::Nifty::XLS::RecordTypes::SHARED_FORMULA)
         {
-          $cell->{shared} = Spreadsheet::Nifty::XLS::Decode::decodeShrFmla($extra->{payload});
-          ($self->{debug}) && print main::Dumper('shrFmla', $cell->{shared});
-
-          my $tokens = Spreadsheet::Nifty::XLS::Formula::decodeTokens($cell->{shared}->{formula}, $self->getBiffVersion());
-          my $context = {sheet => $self, row => $rowIndex, col => $cell->{col}};
-          #printf("Shared formula: %s\n", Spreadsheet::Nifty::XLS::Formula::unparseTokens($context, $tokens));
-          #($self->{debug}) && Spreadsheet::Nifty::XLS::Formula::decodeTokens($cell->{shared}->{formula}, $self->getBiffVersion());
+          my $shared = Spreadsheet::Nifty::XLS::Decode::decodeShrFmla($extra->{payload});
+          $self->recordSharedFormula($shared);
         }
 
         ($self->{debug}) && print main::Dumper('EXTRA', $extra);
@@ -843,7 +857,7 @@ sub readRowCells($)
       if (defined($string))
       {
         ($self->{debug}) && print main::Dumper('STRING', $string);
-        $cell->{string} = Spreadsheet::Nifty::XLS::Decode::decodeString($string->{payload}, $self->getBiffVersion());
+        $cell->{string} = Spreadsheet::Nifty::XLS::Decode::decodeString($string->{payload}, $self->getBofVersion());
       }
     }
 
@@ -890,6 +904,33 @@ sub recordRowRecord($)
   return $rowIndex;
 }
 
+sub recordSharedFormula($)
+{
+  my $self = shift();
+  my ($shared) = @_;
+
+  my $key = sprintf("%d:%d", $shared->{minCol}, $shared->{minRow});
+
+  # TODO: Wrap in eval {}?
+  # TODO: Decode lazily from getSharedFormula?
+  my $formula = $self->{formulaDecoder}->decode($shared->{formula}->{tokenStream}, $shared->{formula}->{extra});
+  $self->{sharedFormulas}->{$key} = $formula;
+
+  #print main::Dumper('recordSharedFormula', $shared, $formula);
+
+  return;
+}
+ 
+sub getSharedFormula($$)
+{
+  my $self = shift();
+  my ($col, $row) = @_;
+
+  my $key = sprintf("%d:%d", $col, $row);
+  #print main::Dumper('getSharedFormula', $col, $row, $key, $self->{sharedFormulas});
+  return $self->{sharedFormulas}->{$key};
+}
+
 # Given a record type, returns true if it is a cell record.
 sub isRecordTypeCell($)
 {
@@ -925,7 +966,7 @@ sub decodeCell($)
   }
   elsif ($rec->{type} == Spreadsheet::Nifty::XLS::RecordTypes::LABEL)
   {
-    $cell = Spreadsheet::Nifty::XLS::Decode::decodeLabel($rec->{payload}, $self->getBiffVersion());
+    $cell = Spreadsheet::Nifty::XLS::Decode::decodeLabel($rec->{payload}, $self->getBofVersion());
   }
   elsif ($rec->{type} == Spreadsheet::Nifty::XLS::RecordTypes::LABEL_SST)
   {
@@ -933,7 +974,7 @@ sub decodeCell($)
   }
   elsif ($rec->{type} == Spreadsheet::Nifty::XLS::RecordTypes::RSTRING)
   {
-    $cell = Spreadsheet::Nifty::XLS::Decode::decodeRString($rec->{payload}, $self->getBiffVersion());
+    $cell = Spreadsheet::Nifty::XLS::Decode::decodeRString($rec->{payload}, $self->getBofVersion());
   }
   elsif ($rec->{type} == Spreadsheet::Nifty::XLS::RecordTypes::RK)
   {

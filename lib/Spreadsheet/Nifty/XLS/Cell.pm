@@ -18,6 +18,20 @@ my $errorMap =
 
 # === Class methods ===
 
+sub new($$$;$)
+{
+  my $class = shift();
+  my ($type, $value, $ctx, $private) = @_;
+
+  my $self = $class->SUPER::new($type, $value);
+  $self->{p} = $private // {};
+  $self->{ctx} = sub { return $ctx; };  # Closure around context
+
+  Scalar::Util::weaken($ctx);
+
+  return $self;
+}
+
 # === Instance methods ===
 
 sub value()
@@ -30,6 +44,27 @@ sub value()
   }
 
   return $self->{v};
+}
+
+sub formatString()
+{
+  my $self = shift();
+
+  return undef;  #TODO
+}
+
+sub formula()
+{
+  my $self = shift();
+
+  (!defined($self->{p}->{formula})) && return undef;
+
+  my $formulaDecoder = $self->{ctx}->()->getFormulaDecoder();
+  my $formula = $formulaDecoder->decode($self->{p}->{formula}->{tokenStream}, $self->{p}->{formula}->{extra});
+  #print main::Dumper($self, $formula);
+  my $context = {sheetReader => $self->{ctx}->(), row => $self->{p}->{row}, col => $self->{p}->{col}};
+
+  return $formula->unparse($context);
 }
 
 1;

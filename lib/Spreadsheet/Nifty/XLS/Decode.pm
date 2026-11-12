@@ -720,9 +720,9 @@ sub decodeFormula($)
 
   my $decoder = StructDecoder->new($bytes);
   my $cell = $decoder->decodeHash(['row:u16', 'col:u16', 'xf:u16', 'result:bytes[8]', 'flags:u16', ':u32']);
-  my $count = $decoder->decodeField('u16');
-  $cell->{formula} = $decoder->getBytes($count);
-  $cell->{extra}   = $decoder->getBytes($decoder->bytesLeft());
+  my $size = $decoder->decodeField('u16');
+  $cell->{formula}->{tokenStream} = $decoder->getBytes($size);
+  $cell->{formula}->{extra} = $decoder->getBytes($decoder->bytesLeft());
   return $cell;
 }
 
@@ -731,8 +731,10 @@ sub decodeShrFmla($)
   my ($bytes) = @_;
 
   my $decoder = StructDecoder->new($bytes);
-  my $shrFmla = $decoder->decodeHash(['minRow:u16', 'maxRow:u16', 'minCol:u8', 'maxCol:u8', ':u8', 'useCount:u8', 'formulaSize:u16', 'formula:bytes[formulaSize]']);
-  $shrFmla->{extra} = $decoder->getBytes($decoder->bytesLeft());
+  my $shrFmla = $decoder->decodeHash(['minRow:u16', 'maxRow:u16', 'minCol:u8', 'maxCol:u8', ':u8', 'useCount:u8']);
+  my $size = $decoder->decodeField('u16');
+  $shrFmla->{formula}->{tokenStream} = $decoder->getBytes($size);
+  $shrFmla->{formula}->{extra} = $decoder->getBytes($decoder->bytesLeft());
 
   return $shrFmla;
 }
