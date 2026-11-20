@@ -162,6 +162,7 @@ sub readWorkbookStream($)
   $self->{workbook}->{styles}        = [];
   $self->{workbook}->{boundsheets}   = [];
   $self->{workbook}->{strings}       = [];
+  $self->{workbook}->{externals}     = {'links' => [], 'sheets' => []};
 
   $self->{offsets}->{workbook} = {};
 
@@ -234,79 +235,82 @@ sub readWorkbookStream($)
         die("Unhandled encryption type");
       }
     }
-    #elsif ($rec->{name} eq 'InterfaceHdr')
     elsif ($rec->{type} == Spreadsheet::Nifty::XLS::RecordTypes::INTERFACE_HDR)
     {
       $self->readInterface($rec);
     }
-    #elsif ($rec->{name} eq 'RRTabId')
     elsif ($rec->{type} == Spreadsheet::Nifty::XLS::RecordTypes::RR_TAB_ID)
     {
       my $decoder = StructDecoder->new($rec->{payload});
       $self->{workbook}->{tabIds} = $decoder->decodeArray('u16', $decoder->bytesLeft() / 2);
     }
-    #elsif ($rec->{name} eq 'Protect')
     elsif ($rec->{type} == Spreadsheet::Nifty::XLS::RecordTypes::PROTECT)
     {
       $self->{workbook}->{protect} = unpack('v', $rec->{payload});
     }
-    #elsif ($rec->{name} eq 'Date1904')
     elsif ($rec->{type} == Spreadsheet::Nifty::XLS::RecordTypes::DATE_1904)
     {
       $self->{workbook}->{flagDate1904} = unpack('v', $rec->{payload});
     }
-    #elsif ($rec->{name} eq 'Font')
     elsif ($rec->{type} == Spreadsheet::Nifty::XLS::RecordTypes::FONT)
     {
       push(@{$self->{workbook}->{fonts}}, Spreadsheet::Nifty::XLS::Decode::decodeFont($rec->{payload}, $biffVersion));
     }
-    #elsif ($rec->{name} eq 'Format')
     elsif ($rec->{type} == Spreadsheet::Nifty::XLS::RecordTypes::FORMAT)
     {
       my $numberFormat = Spreadsheet::Nifty::XLS::Decode::decodeFormat($rec->{payload}, $biffVersion);
       $self->{workbook}->{numberFormats}->{$numberFormat->{id}} = $numberFormat->{format};
     }
-    #elsif ($rec->{name} eq 'DXF')
     elsif ($rec->{type} == Spreadsheet::Nifty::XLS::RecordTypes::DXF)
     {
       # TODO: Differential formats
     }
-    #elsif ($rec->{name} eq 'XF')
     elsif ($rec->{type} == Spreadsheet::Nifty::XLS::RecordTypes::XF)
     {
       push(@{$self->{workbook}->{xfs}}, Spreadsheet::Nifty::XLS::Decode::decodeXF($rec->{payload}, $biffVersion));
     }
-    #elsif ($rec->{name} eq 'XFCRC')
     elsif ($rec->{type} == Spreadsheet::Nifty::XLS::RecordTypes::XF_CRC)
     {
       # TODO: XF CRC
     }
-    #elsif ($rec->{name} eq 'XFExt')
     elsif ($rec->{type} == Spreadsheet::Nifty::XLS::RecordTypes::XF_EXT)
     {
       # TODO: FXExt
     }
-    #elsif ($rec->{name} eq 'Style')
     elsif ($rec->{type} == Spreadsheet::Nifty::XLS::RecordTypes::STYLE)
     {
       push(@{$self->{workbook}->{styles}}, Spreadsheet::Nifty::XLS::Decode::decodeStyle($rec->{payload}, $biffVersion));
     }
-    #elsif ($rec->{name} eq 'Palette')
     elsif ($rec->{type} == Spreadsheet::Nifty::XLS::RecordTypes::PALETTE)
     {
       $self->{workbook}->{palette} = Spreadsheet::Nifty::XLS::Decode::decodePalette($rec->{payload});
     }
-    #elsif ($rec->{name} eq 'BoundSheet8')
     elsif ($rec->{type} == Spreadsheet::Nifty::XLS::RecordTypes::BOUND_SHEET_8)
     {
       push(@{$self->{workbook}->{boundsheets}}, Spreadsheet::Nifty::XLS::Decode::decodeBoundSheet8($rec->{payload}, $biffVersion));
     }
-    #elsif ($rec->{name} eq 'Lbl')
+    elsif ($rec->{type} == Spreadsheet::Nifty::XLS::RecordTypes::SUP_BOOK)
+    {
+      my $link = Spreadsheet::Nifty::XLS::Decode::decodeSupBook($rec->{payload});
+      push(@{$self->{workbook}->{externals}->{links}}, $link);
+    }
+    elsif ($rec->{type} == Spreadsheet::Nifty::XLS::RecordTypes::EXTERN_SHEET)
+    {
+      if ($biffVersion == Spreadsheet::Nifty::XLS::BOF_VERSION_BIFF5)
+      {
+        my $ref = Spreadsheet::Nifty::XLS::Decode::decodeExternSheetBiff5($rec->{payload});
+        push(@{$self->{workbook}->{externals}->{sheets}}, $ref);
+      }
+      elsif ($biffVersion == Spreadsheet::Nifty::XLS::BOF_VERSION_BIFF8)
+      {
+        $self->{workbook}->{externals}->{sheets} = Spreadsheet::Nifty::XLS::Decode::decodeExternSheetBiff8($rec->{payload});
+      }
+    }
     elsif ($rec->{type} == Spreadsheet::Nifty::XLS::RecordTypes::LBL)
     {
-      push(@{$self->{workbook}->{labels}}, Spreadsheet::Nifty::XLS::Decode::decodeLbl($rec->{payload}, $biffVersion));
+      my $lbl = Spreadsheet::Nifty::XLS::Decode::decodeLbl($rec->{payload}, $biffVersion);
+      push(@{$self->{workbook}->{labels}}, $lbl);
     }
-    #elsif ($rec->{name} eq 'SST')
     elsif ($rec->{type} == Spreadsheet::Nifty::XLS::RecordTypes::SST)
     {
       $self->readStringTable($rec->{payload});
@@ -620,6 +624,28 @@ sub getLabel($)
   return $self->{workbook}->{labels}->[$index];
 }
 
+sub getLabelByNameAndWorksheet($$)
+{
+  my $self = shift();
+  my ($name, $sheetIndex) = @_;
+
+  for my $l (@{$self->{workbook}->{labels}})
+  {
+    ($l->{name} ne $name) && next;
+
+    if (!defined($sheetIndex))
+    {
+      (!defined($l->{sheetIndex})) && return $l;
+    }
+    else
+    {
+      ($sheetIndex == $l->{sheetIndex}) && return $l;
+    }
+  }
+
+  return undef;  # Not found
+}
+
 sub getSheetNames()
 {
   my $self = shift();
@@ -683,6 +709,21 @@ sub openSheet($)
   # Wrap the SheetReader in a Sheet
   my $sheet = Spreadsheet::Nifty::XLS::Sheet->new($self, $index, $sheetReader);
   return $sheet;
+}
+
+sub getExternalSheetReference($)
+{
+  my $self = shift();
+  my ($index) = @_;
+
+  (($index < 0) || ($index >= scalar(@{$self->{workbook}->{externals}->{sheets}}))) && return undef;  # External sheet out of bounds
+  my $externalSheet = $self->{workbook}->{externals}->{sheets}->[$index];
+
+  my $linkId = $externalSheet->{linkId};
+  (($linkId < 0) || ($linkId >= scalar(@{$self->{workbook}->{externals}->{links}}))) && return undef;  # External link out of bounds
+  my $externalLink = $self->{workbook}->{externals}->{links}->[$linkId];
+
+  return {externalSheet => $externalSheet, externalLink => $externalLink};
 }
 
 1;

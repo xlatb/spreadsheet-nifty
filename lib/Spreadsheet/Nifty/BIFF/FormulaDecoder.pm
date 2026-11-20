@@ -180,6 +180,84 @@ sub decodeAreaRef2d($)
   return $ref;
 }
 
+sub decodeAreaRef3d($)
+{
+  my $self = shift();
+  my ($decoder) = @_;
+
+  my $ref = {};
+
+  if ($self->{version} == Spreadsheet::Nifty::BIFF::Constants::BIFF_V5)
+  {
+    my $sheetIndex = $decoder->decodeField('i16');
+    if ($sheetIndex < 0)
+    {
+      $ref->{externIndex} = abs($sheetIndex) - 1;  # Reference into EXTERNSHEET
+      $decoder->skipBytes(8);  # Unused
+      $ref->{firstSheet} = $decoder->decodeField('u16');
+      $ref->{lastSheet}  = $decoder->decodeField('u16');
+    }
+    else
+    {
+      $ref->{externIndex} = $sheetIndex - 1;  # Reference into EXTERNSHEET
+      $decoder->skipBytes(12);
+    }
+
+    my $minRow = $decoder->decodeField('u16');
+    my $maxRow = $decoder->decodeField('u16');
+    my $minCol = $decoder->decodeField('u8');
+    my $maxCol = $decoder->decodeField('u8');
+    $ref->{minRow} = $minRow & 0x3FFF;
+    $ref->{maxRow} = $maxRow & 0x3FFF;
+    $ref->{minCol} = $minCol;
+    $ref->{maxCol} = $maxCol;
+    $ref->{relMinRow} = ($minRow >> 15) & 0x1;
+    $ref->{relMinCol} = ($minRow >> 14) & 0x1;
+    $ref->{relMaxRow} = ($maxRow >> 15) & 0x1;
+    $ref->{relMaxCol} = ($maxRow >> 14) & 0x1;
+  }
+  elsif ($self->{version} == Spreadsheet::Nifty::BIFF::Constants::BIFF_V8)
+  {
+    $ref->{externIndex} = $decoder->decodeField('u16');
+
+    my $minRow = $decoder->decodeField('u16');
+    my $maxRow = $decoder->decodeField('u16');
+    my $minCol = $decoder->decodeField('u16');
+    my $maxCol = $decoder->decodeField('u16');
+    $ref->{minRow} = $minRow;
+    $ref->{maxRow} = $maxRow;
+    $ref->{minCol} = $minCol & 0xFF;
+    $ref->{maxCol} = $maxCol & 0xFF;
+    $ref->{relMinRow} = ($minCol >> 15) & 0x1;
+    $ref->{relMinCol} = ($minCol >> 14) & 0x1;
+    $ref->{relMaxRow} = ($maxCol >> 15) & 0x1;
+    $ref->{relMaxCol} = ($maxCol >> 14) & 0x1;
+  }
+  elsif ($self->{version} == Spreadsheet::Nifty::BIFF::Constants::BIFF_V12)
+  {
+    $ref->{externIndex} = $decoder->decodeField('u16');
+
+    my $minRow = $decoder->decodeField('u32');
+    my $maxRow = $decoder->decodeField('u32');
+    my $minCol = $decoder->decodeField('u16');
+    my $maxCol = $decoder->decodeField('u16');
+    $ref->{minRow} = $minRow;
+    $ref->{maxRow} = $maxRow;
+    $ref->{minCol} = $minCol & 0x3FFF;
+    $ref->{maxCol} = $maxCol & 0x3FFF;
+    $ref->{relMinRow} = ($minCol >> 15) & 0x1;
+    $ref->{relMinCol} = ($minCol >> 14) & 0x1;
+    $ref->{relMaxRow} = ($maxCol >> 15) & 0x1;
+    $ref->{relMaxCol} = ($maxCol >> 14) & 0x1;
+  }
+  else
+  {
+    ...;
+  }
+
+  return $ref;
+}
+
 sub decode($$)
 {
   my $self = shift();
@@ -363,6 +441,11 @@ sub decode($$)
       {
         # tRef3d - Reference to another cell on a different sheet
         $token->{ref} = $self->decodeCellRef3d($decoder);
+      }
+      elsif ($id == 0x1B)
+      {
+        # tArea3d - Reference to a cell range on a different sheet
+        $token->{ref} = $self->decodeAreaRef3d($decoder);
       }
       else
       {

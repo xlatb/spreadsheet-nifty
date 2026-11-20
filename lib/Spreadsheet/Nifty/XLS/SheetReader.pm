@@ -938,6 +938,22 @@ sub getSharedFormula($$)
   return $self->{sharedFormulas}->{$key};
 }
 
+sub getExternalSheetReference($)
+{
+  my $self = shift();
+  my ($index) = @_;
+
+  my $ref = $self->{workbook}->getExternalSheetReference($index);
+  (!defined($ref)) && return undef;
+
+  if ($ref->{externalLink}->{type} eq 'workbook-self')
+  {
+    return {type => 'workbook-self', minSheet => $ref->{externalSheet}->{minSheet}, maxSheet => $ref->{externalSheet}->{maxSheet}}
+  }
+
+  ...;
+}
+
 # Given a record type, returns true if it is a cell record.
 sub isRecordTypeCell($)
 {

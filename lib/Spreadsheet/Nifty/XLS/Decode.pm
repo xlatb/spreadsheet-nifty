@@ -400,6 +400,10 @@ sub decodeLbl($$)
     $lbl->{name} = $builtinNames->[ord($lbl->{name})];
   }
 
+  # Excel stores the sheetIndex as 0 if there is no specific sheet, and a
+  #  1-based index otherwise.
+  $lbl->{sheetIndex} = ($lbl->{sheetIndex} == 0) ? undef : ($lbl->{sheetIndex} - 1);
+
 #  my $lbl;
 #  if ($version <= Spreadsheet::Nifty::XLS::BOF_VERSION_BIFF5)
 #  {
@@ -591,6 +595,121 @@ sub decodeDimensions($)
   }
 
   return $dimensions;
+}
+
+# 'Supporting book' record.
+sub decodeSupBook($)
+{
+  my ($bytes) = @_;
+
+  my $decoder = StructDecoder->new($bytes);
+
+  my $supBook = $decoder->decodeHash(['sheetCount:u16']);
+
+  my $length = $decoder->decodeField('u16');
+  if ($length <= 0x00FF)
+  {
+    my $path = Encode::decode('cp-1252', $decoder->getBytes($length));
+    if ($path eq "\x00")
+    {
+      $supBook->{type} = 'sheet-self';
+    }
+    elsif ($path eq "\x20")
+    {
+      $supBook->{type} = 'unused';
+    }
+    else
+    {
+      $supBook->{type} = 'path';
+      $supBook->{path} = Encode::decode('cp-1252', $decoder->getBytes($length));
+    }
+  }
+  elsif ($length == 0x0401)
+  {
+    $supBook->{type} = 'workbook-self';
+    $supBook->{sheetCount} = undef;  # Ignored in this case
+  }
+  elsif ($length == 0x3A01)
+  {
+    $supBook->{type} = 'addin';
+    $supBook->{payload} = $decoder->getBytes($decoder->bytesLeft());
+  }
+  else
+  {
+    ...;
+  }
+
+  # Read sheet names, if included
+  if (defined($supBook->{sheetCount}))
+  {
+    $supBook->{sheetNames} = [];
+    for (my $i = 0; $i < $supBook->{sheetCount}; $i++)
+    {
+      push(@{$supBook->{sheetNames}}, decodeXLUnicodeString($decoder));
+    }
+  }
+
+  return $supBook;
+}
+
+# This is split up from the BIFF8 version because they encode different things.
+# In BIFF5, this encodes a single external reference, and the record is
+#  repeated as needed.
+sub decodeExternSheetBiff5($)
+{
+  my ($bytes) = @_;
+
+  my $decoder = StructDecoder->new($bytes);
+  my $length = $decoder->decodeField('u8');
+
+  my $firstByte = $decoder->decodeField('u8');
+  if ($firstByte == 0x00)
+  {
+    return {type => 'empty'};  # Expected $length is 1
+  }
+  elsif ($firstByte == 0x01)
+  {
+    # External link to a spreadsheet file sheet: '[file.xls]Sheet1'
+    my $path = Encode::decode('cp-1252', $decoder->getBytes($length - 1));
+    return {type => 'external-sheet', path => $path};
+  }
+  elsif ($firstByte == 0x02)
+  {
+    return {type => 'sheet-self'};  # Expected $length is 1
+  }
+  elsif ($firstByte == 0x03)
+  {
+    my $name = Encode::decode('cp-1252', $decoder->getBytes($length));  # NOTE: Length field above does not include the magic first byte in this one case!
+    return {type => 'sheet', name => $name}
+  }
+  elsif ($firstByte >= 0x20)
+  {
+    # External link to a file/resource/url
+    my $path = Encode::decode('cp-1252', $firstByte . $decoder->getBytes($length - 1));
+    return {type => 'external-resource', path => $path};
+  }
+  else
+  {
+    ...;
+  }
+}
+
+# This is split up from the BIFF5 version because they encode different things.
+# In BIFF8, this encodes an array of references into the SupBook records.
+sub decodeExternSheetBiff8($)
+{
+  my ($bytes) = @_;
+
+  my $decoder = StructDecoder->new($bytes);
+  my $count = $decoder->decodeField('u16');
+  my $refs = [];
+  for (my $i = 0; $i < $count; $i++)
+  {
+    my $ref = $decoder->decodeHash(['linkId:u16', 'minSheet:u16', 'maxSheet:u16']);;
+    push(@{$refs}, $ref);
+  }
+
+  return $refs;
 }
 
 sub decodeRow($)

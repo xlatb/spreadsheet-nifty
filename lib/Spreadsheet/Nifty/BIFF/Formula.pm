@@ -35,6 +35,23 @@ sub appendToken($)
   return;
 }
 
+sub getTokenCount()
+{
+  my $self = shift();
+
+  return scalar(@{$self->{tokens}});
+}
+
+sub getToken($)
+{
+  my $self = shift();
+  my ($index) = @_;
+
+  (($index < 0) || ($index >= scalar(@{$self->{tokens}}))) && die("getToken(): Index ${index} out of range");
+
+  return $self->{tokens}->[$index];
+}
+
 sub unparse($)
 {
   my $self = shift();
@@ -270,6 +287,54 @@ sub unparse($)
            Spreadsheet::Nifty::Utils->colIndexToString($t->{ref}->{col}),
            ((!$t->{ref}->{relRow}) ? '$' : ''),
            int($t->{ref}->{row} + 1));
+          push(@{$stack}, $str);
+        }
+        else
+        {
+          ...;
+        }
+      }
+      elsif ($t->{id} == 0x1B)
+      {
+        # tArea3d - 3d area reference
+        my $sheetReader = $context->{sheetReader};
+        (!defined($sheetReader)) && die("Found reference to external sheet but context has no sheet reader");
+        (!$sheetReader->can('getExternalSheetReference')) && die("Found reference to external sheet, but sheet reader does not resolve them");
+
+        my $sheetRef = $sheetReader->getExternalSheetReference($t->{ref}->{externIndex});
+        (!defined($sheetRef)) && die("Could not resolve external sheet reference");
+        if ($sheetRef->{type} eq 'workbook-self')
+        {
+          my $sheetNames = $sheetReader->workbook()->getSheetNames();
+          (($sheetRef->{minSheet} < 0) || ($sheetRef->{minSheet} >= scalar(@{$sheetNames}))) && die("Reference to external sheet starting sheet is out of range");
+          (($sheetRef->{maxSheet} < 0) || ($sheetRef->{maxSheet} >= scalar(@{$sheetNames}))) && die("Reference to external sheet ending sheet is out of range");
+
+          my $str = '';
+          if ($sheetRef->{minSheet} == $sheetRef->{maxSheet})
+          {
+            $str = Spreadsheet::Nifty::Utils->quoteSheetNameIfNeeded($sheetNames->[$sheetRef->{minSheet}]) . '!';
+          }
+          else
+          {
+            $str = sprintf("%s:%s!",
+             Spreadsheet::Nifty::Utils->quoteSheetNameIfNeeded($sheetNames->[$sheetRef->{minSheet}]),
+             Spreadsheet::Nifty::Utils->quoteSheetNameIfNeeded($sheetNames->[$sheetRef->{maxSheet}]));
+          }
+
+          my $minCol = $t->{ref}->{relMinCol} ? ($context->{col} + $t->{ref}->{minCol}) % $self->{maxColCount} : $t->{ref}->{minCol};
+          my $maxCol = $t->{ref}->{relMaxCol} ? ($context->{col} + $t->{ref}->{maxCol}) % $self->{maxColCount} : $t->{ref}->{maxCol};
+          my $minRow = $t->{ref}->{relMinRow} ? ($context->{row} + $t->{ref}->{minRow}) % $self->{maxRowCount} : $t->{ref}->{minRow};
+          my $maxRow = $t->{ref}->{relMaxRow} ? ($context->{row} + $t->{ref}->{maxRow}) % $self->{maxRowCount} : $t->{ref}->{maxRow};
+
+          $str .= sprintf("%s%s%s%s:%s%s%s%s",
+          $t->{ref}->{relMinCol} ? '' : '$',
+          Spreadsheet::Nifty::Utils->colIndexToString($minCol),
+          $t->{ref}->{relMinRow} ? '' : '$',
+          int($minRow + 1),
+          $t->{ref}->{relMaxCol} ? '' : '$',
+          Spreadsheet::Nifty::Utils->colIndexToString($maxCol),
+          $t->{ref}->{relMaxRow} ? '' : '$',
+          int($maxRow + 1));
           push(@{$stack}, $str);
         }
         else

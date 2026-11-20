@@ -23,6 +23,8 @@ use constant
   FONT          => 0x0031,
   FORMAT        => 0x041E,
   BOUND_SHEET_8 => 0x0085,  # Called 'SHEET' by OpenOffice, 'BoundSheet8' by MS
+  SUP_BOOK      => 0x01AE,  # Called 'EXTERNALBOOK' by OpenOffice, 'SupBook' by MS
+  EXTERN_SHEET  => 0x0017,
   LBL           => 0x0018,  # Called 'DEFINEDNAME' by OpenOffice, 'Lbl' by MS
   SST           => 0x00FC,
   PALETTE       => 0x0092,
@@ -84,7 +86,7 @@ my $xlsRecordNames =
 '0013' => 'Password',
 '0014' => 'Header',
 '0015' => 'Footer',
-'0016' => 'EXTERNCOUNT',  # BIFF5?
+'0016' => 'EXTERNCOUNT',  # BIFF5
 '0017' => 'ExternSheet',
 '0018' => 'Lbl',
 '0019' => 'WinProtect',

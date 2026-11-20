@@ -182,4 +182,36 @@ sub getColDimensions()
   return [$self->{reader}->{header}->{dimensions}->{minCol}, $self->{reader}->{header}->{dimensions}->{maxCol} - 1];
 }
 
+# NOTE: If minRow == maxRow, the autofilter area's final row is not explicitly
+#  defined. The area will be deemed to stop at the next empty row.
+sub getAutoFilter()
+{
+  my $self = shift();
+
+  my $label = $self->{workbook}->getLabelByNameAndWorksheet('_FilterDatabase', $self->{sheetIndex});
+  (!defined($label)) && return undef;
+
+  my $decoder = $self->{reader}->getFormulaDecoder();
+  my $formula = $decoder->decode($label->{formula});
+  #print main::Dumper('UNPARSE', $formula->unparse({sheetReader => $self->{reader}}));
+  ($formula->getTokenCount() != 1) && die("getAutoFilter(): Expected _FilterDatabase formula to have a single token");
+
+  # The formula should have decoded to a single tArea3d token.
+  my $token = $formula->getToken(0);
+  ($token->{type} != 0x3B) && die("getAutoFilter(): Unexpected token type");
+
+  # We could follow the token's external reference using something like:
+  #  $self->{reader}->getExternalSheetReference($token->{externIndex})
+  # But, this external link should always be pointing to a 'workbook-self'
+  #  reference with minSheet and maxSheet set to this sheet.
+
+  my $autoFilter = {range => {}};
+  $autoFilter->{range}->{minRow} = $token->{ref}->{minRow};
+  $autoFilter->{range}->{maxRow} = $token->{ref}->{maxRow};
+  $autoFilter->{range}->{minCol} = $token->{ref}->{minCol};
+  $autoFilter->{range}->{maxCol} = $token->{ref}->{maxCol};
+
+  return $autoFilter;
+}
+
 1;
