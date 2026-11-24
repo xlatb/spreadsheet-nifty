@@ -28,6 +28,34 @@ sub attributesHash($)
   return $hash;
 }
 
+# Given a string like "A1:C50", breaks it into fields.
+sub decode2DRangeRefString($)
+{
+  my $class = shift();
+  my ($str) = @_;
+
+  ($str !~ m#^([A-Z]+)([0-9]+):([A-Z]+)([0-9]+)$#i) && return undef;
+
+  my $ref = {};
+  $ref->{minCol} = Spreadsheet::Nifty::Utils->stringToColIndex($1);
+  $ref->{minRow} = int($2) - 1;
+  $ref->{maxCol} = Spreadsheet::Nifty::Utils->stringToColIndex($3);
+  $ref->{maxRow} = int($4) - 1;
+
+  return $ref;
+}
+
+# As above, but we can have multiple ranges separated by spaces. The
+#  result is always returned in an array.
+sub decodeMulti2DRangeRefString($)
+{
+  my $class = shift();
+  my ($str) = @_;
+
+  my $parts = [ split(/ +/, $str) ];
+  return [ map({ $class->decode2DRangeRefString($_) } @{$parts}) ];
+}
+
 # Given an XML Schema boolean value string, returns the boolean value.
 sub decodeBool($)
 {
@@ -89,15 +117,33 @@ sub decodeDimension($)
   my $ref = $node->getAttribute('ref');
   (!defined($ref)) && return undef;
 
-  ($ref !~ m#^([A-Z]+)([0-9]+):([A-Z]+)([0-9]+)$#i) && return undef;
-
-  my $dims = {};
-  $dims->{minCol} = Spreadsheet::Nifty::Utils->stringToColIndex($1);
-  $dims->{minRow} = int($2);
-  $dims->{maxCol} = Spreadsheet::Nifty::Utils->stringToColIndex($3);
-  $dims->{maxRow} = int($4);
-
+  my $dims = $class->decode2DRangeRefString($ref);
   return $dims;
+}
+
+# <col min="1" max="1" width="18.7109375" customWidth="1"/>
+sub decodeCol($)
+{
+  my $class = shift();
+  my ($node) = @_;
+
+  my $col = {};
+
+  # Grab integer attributes
+  for my $a (qw(min max customWidth bestFit style hidden outlineLevel collapsed))
+  {
+    my $v = $node->getAttribute($a);
+    $col->{$a} = defined($v) ? int($v) : undef;
+  }
+
+  my $width = $node->getAttribute('width');
+  $col->{width} = defined($width) ? (0 + $width) : undef;
+
+  # The 'min' and 'max' attributes are 1-based, so convert to 0-based
+  $col->{min}--;
+  $col->{max}--;
+
+  return $col;
 }
 
 # <row r="1000" ht="0" customHeight="1" hidden="1">
@@ -172,6 +218,155 @@ sub decodeCell($)
   }
 
   return $cell;
+}
+
+# <autoFilter ref="A1:D100">...</autoFilter>
+# Possible children are:
+#  1. Zero or more <filterColumn/>
+#  2. Optionally one <sortState/>
+#  3. Optionally one <extList/>
+sub decodeAutoFilter($)
+{
+  my $class = shift();
+  my ($node) = @_;
+
+  my $autoFilter = {};
+  $autoFilter->{ref} = $class->decode2DRangeRefString($node->getAttribute('ref'));
+
+  $autoFilter->{filterColumns} = [];
+  my $filterColumnElements = [ $node->getChildrenByTagNameNS($node->namespaceURI(), 'filterColumn') ];
+  for my $e (@{$filterColumnElements})
+  {
+    push(@{$autoFilter->{filterColumns}}, $class->decodeFilterColumn($e));
+  }
+
+  my ($sortStateElement) = $node->getChildrenByTagNameNS($node->namespaceURI(), 'sortState');
+  if (defined($sortStateElement))
+  {
+    $autoFilter->{sortState} = $class->decodeSortState($sortStateElement);
+  }
+
+  return $autoFilter;
+}
+
+# <filterColumn colId="0">...</filterColumn>
+# If there are active filters, we will have one of the following children:
+# 1. <filters/>
+# 2. <top10/>
+# 3. <customFilters/>
+# 4. <dynamicFilters/>
+# 5. <colorFilter/>
+# 6. <iconFilter/>
+sub decodeFilterColumn($)
+{
+  my $class = shift();
+  my ($node) = @_;
+
+  my $filterColumn = {};
+  $filterColumn->{colId} = int($node->getAttribute('colId'));
+  $filterColumn->{hiddenButton} = int($node->getAttribute('hiddenButton') // 0);
+  $filterColumn->{showButton} = int($node->getAttribute('showButton') // 1);
+
+  if (defined(my ($filtersElement) = $node->getChildrenByTagNameNS($node->namespaceURI(), 'filters')))
+  {
+    $filterColumn->{filterType} = 'filters';
+    $filterColumn->{filters} = $class->decodeFilters($filtersElement);
+  }
+  elsif (defined(my ($customFiltersElement) = $node->getChildrenByTagNameNS($node->namespaceURI(), 'customFilters')))
+  {
+    $filterColumn->{filterType} = 'customFilters';
+    $filterColumn->{filters} = $class->decodeCustomFilters($customFiltersElement);
+  }
+  # TODO: Other filter types
+
+  return $filterColumn;
+}
+
+# <filters blank="1">
+#   <filter val="ABC"/>
+#   <filter val="123"/>
+#   <dateGroupItem year="2026" month="11" dateTimeGrouping="month"/>
+# </filters>
+sub decodeFilters($)
+{
+  my $class = shift();
+  my ($node) = @_;
+
+  my $filters = {};
+  $filters->{blank} = int($node->getAttribute('blank') // 0);  # Whether blank cells are shown
+  $filters->{calendarType} = $node->getAttribute('calendarType');
+
+  my $filterElements = [ $node->getChildrenByTagNameNS($node->namespaceURI(), 'filter') ];
+  $filters->{values} = [ map({ $_->getAttribute('val') } @{$filterElements}) ];
+
+  # TODO: dateGroupItem
+
+  return $filters;
+}
+
+# <customFilters and="1">
+#   <customFilter operator="greaterThanOrEqual" val="10"/>
+#   <customFilter operator="lessThanOrEqual" val="50"/>
+# <customFilters>
+# The maximum number of customFilter children is 2, to allow for a range.
+sub decodeCustomFilters($)
+{
+  my $class = shift();
+  my ($node) = @_;
+
+  my $customFilters = {};
+  $customFilters->{and} = int($node->getAttribute('blank') // 0);  # AND vs OR
+  $customFilters->{filters} = [];
+
+  my $customFilterElements = [ $node->getChildrenByTagNameNS($node->namespaceURI(), 'customFilter') ];
+  for my $e (@{$customFilterElements})
+  {
+    my $customFilter = {};
+    $customFilter->{operator} = $e->getAttribute('operator') // 'equal';
+    $customFilter->{val} = $e->getAttribute('val');
+    push(@{$customFilters->{filters}}, $customFilter);
+  }
+
+  return $customFilters;
+}
+
+# <sortState ref="A2:C50">...</sortState>
+sub decodeSortState($)
+{
+  my $class = shift();
+  my ($node) = @_;
+
+  my $sortState = {};
+  $sortState->{ref} = $class->decode2DRangeRefString($node->getAttribute('ref'));
+  $sortState->{columnSort} = int($node->getAttribute('columnSort') // 0);
+  $sortState->{caseSensitive} = int($node->getAttribute('caseSensitive') // 0);
+  $sortState->{sortMethod} = $node->getAttribute('sortMethod');
+
+  my $sortConditionElements = [ $node->getChildrenByTagNameNS($node->namespaceURI(), 'sortCondition') ];
+  $sortState->{conditions} = [];
+  for my $e (@{$sortConditionElements})
+  {
+    push(@{$sortState->{conditions}}, $class->decodeSortcondition($e));
+  }
+
+  return $sortState;
+}
+
+# <sortCondition ref="B2:B50" descending="1"/>
+sub decodeSortCondition($)
+{
+  my $class = shift();
+  my ($node) = @_;
+
+  my $sortCondition = {};
+  $sortCondition->{ref} = $class->decode2DRangeRefString($node->getAttribute('ref'));
+  $sortCondition->{descending} = int($node->getAttribute('descending') // 0);
+  $sortCondition->{sortBy} = $node->getAttribute('sortBy') // 'value';
+  $sortCondition->{customList} = $node->hasAttribute('customList') ? [ split(/,/, $node->getAttribute('customList')) ] : undef;
+  $sortCondition->{dxfId} = $node->hasAttribute('dxfId') ? int($node->getAttribute('dxfId')) : undef;
+  $sortCondition->{iconSet} = $node->getAttribute('iconSet');
+  $sortCondition->{iconId} = node->hasAttribute('iconId') ? int($node->getAttribute('iconId')) : undef;
+  return $sortCondition;
 }
 
 # <workbookProtection/> element for an entire workbook.

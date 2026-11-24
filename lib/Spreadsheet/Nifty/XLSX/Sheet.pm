@@ -52,9 +52,9 @@ sub getRowDimensions()
 {
   my $self = shift();
 
-  (!defined($self->{reader}->{header}->{dimensions})) && return undef;  # Unknown dimensions
+  (!defined($self->{reader}->{meta}->{dimensions})) && return undef;  # Unknown dimensions
 
-  return [$self->{reader}->{header}->{dimensions}->{minRow}, $self->{reader}->{header}->{dimensions}->{maxRow}];
+  return [$self->{reader}->{meta}->{dimensions}->{minRow}, $self->{reader}->{meta}->{dimensions}->{maxRow}];
 }
 
 # TODO: Dimensions could be missing and we'd need to scan
@@ -62,9 +62,9 @@ sub getColDimensions()
 {
   my $self = shift();
 
-  (!defined($self->{reader}->{header}->{dimensions})) && return undef;  # Unknown dimensions
+  (!defined($self->{reader}->{meta}->{dimensions})) && return undef;  # Unknown dimensions
 
-  return [$self->{reader}->{header}->{dimensions}->{minCol}, $self->{reader}->{header}->{dimensions}->{maxCol}];
+  return [$self->{reader}->{meta}->{dimensions}->{minCol}, $self->{reader}->{meta}->{dimensions}->{maxCol}];
 }
 
 sub buildCell($)
@@ -144,6 +144,14 @@ sub readRow()
   my $cells = $self->{reader}->readRow();
   #print main::Dumper($cells);
   return [ map( { $self->buildCell($_) } @{$cells} ) ];
+}
+
+sub getAutoFilter()
+{
+  my $self = shift();
+
+  my $autoFilter = $self->{reader}->getAutoFilterState();
+  return $autoFilter;
 }
 
 1;

@@ -4,10 +4,13 @@ use strict;
 
 package Spreadsheet::Nifty::XLSX::SheetReader;
 
+my $xmlns = $Spreadsheet::Nifty::XLSX::namespaces->{main};
+
 use Spreadsheet::Nifty::XLSX;
 use Spreadsheet::Nifty::XLSX::Decode;
 use Spreadsheet::Nifty::ZIPPackage;
 use Spreadsheet::Nifty::IndexedColors;
+use Spreadsheet::Nifty::XMLReaderUtils;
 
 use XML::LibXML qw(:libxml);
 use XML::LibXML::Reader;
@@ -28,7 +31,7 @@ sub new()
   $self->{xmlReader}      = undef;
   $self->{rowIndices}     = {};
   $self->{rows}           = undef;
-  $self->{header}         = undef;
+  $self->{meta}           = {};
   $self->{sharedFormulae} = {};
 
   bless($self, $class);
@@ -45,19 +48,33 @@ sub workbook()
   return $self->{workbook};
 }
 
-sub open()
+sub init()
 {
   my $self = shift();
 
   $self->{xmlReader} = XML::LibXML::Reader->new({IO => $self->{zipReader}});
 
-  $self->{header}     = {};
   $self->{rows}       = [];
   $self->{rowIndices} = {next => 0, final => undef, highest => undef};
 
-  return $self->readHeader();
+  return !!1;
 }
 
+sub open()
+{
+  my $self = shift();
+
+  (!$self->init()) && return !!0;
+  (!$self->readRootElement()) && return !!0;
+  (!$self->readPrologue()) && return !!0;
+
+  return !!1;
+}
+
+# Rewind the stream to the beginning.
+# Note that most methods assume that the read position is left within
+#  the <sheetData/> element. It's better to use findSheetDataStart()
+#  if seeking backwards is the goal.
 sub rewind()
 {
   my $self = shift();
@@ -65,19 +82,18 @@ sub rewind()
   $self->{xmlReader}->close();
   $self->{zipReader}->seek(0);
 
-  return $self->open();
+  return $self->init();
 }
 
-# Reads up until <sheetData/>.
-sub readHeader()
+sub findSheetDataStart()
 {
   my $self = shift();
 
-  my $xmlns = $Spreadsheet::Nifty::XLSX::namespaces->{main};
-  
-  # Read elements up to <sheetData/>. Apparently they are all optional.
+  (!$self->rewind()) && return !!0;
+  (!$self->readRootElement()) && return !!0;
+
   my $status;
-  while (($status = $self->{xmlReader}->nextElement()) == 1)
+  do
   {
     #$self->{debug} && printf("  element %s:%s\n", $self->{xmlReader}->namespaceURI(), $self->{xmlReader}->localName());
     ($self->{xmlReader}->namespaceURI() ne $xmlns) && next;
@@ -86,25 +102,149 @@ sub readHeader()
     my $localName = $self->{xmlReader}->localName();
     if ($localName eq 'sheetData')
     {
-      # TODO: Skip over this element and continue reading? Stuff like autoFilter and sheetProtection occurs after
-      $self->{xmlReader}->read();  # Consume <sheetData/>
+      $self->{xmlReader}->read();  # Descend into <sheetData/>
+      $self->{rowIndices}->{next} = 0;
+      return !!1;
+    }
+  } while (($status = $self->{xmlReader}->nextSiblingElement()) == 1);
+
+  return !!0;  # Never found <sheetData/>
+}
+
+sub readRootElement()
+{
+  my $self = shift();
+
+  ($self->{xmlReader}->readState() != XML_READER_START) && die("readRootElement(): Not at start of stream");
+
+  # Check the root element
+  $self->{xmlReader}->nextElement();
+  ($self->{xmlReader}->localName() ne 'worksheet') && return !!0;
+  ($self->{xmlReader}->namespaceURI() ne $xmlns) && return !!0;
+
+  # Descend into its children
+  $self->{xmlReader}->nextElement();
+
+  return !!1;
+}
+
+# Reads the prologue information appearing before <sheetData/>.
+# The read location is left at the start of the contents of <sheetData/>.
+sub readPrologue()
+{
+  my $self = shift();
+
+  # Read child elements up to <sheetData/>. Apparently they are all optional.
+  my $status;
+  do
+  {
+    #$self->{debug} && printf("  element %s:%s\n", $self->{xmlReader}->namespaceURI(), $self->{xmlReader}->localName());
+    ($self->{xmlReader}->namespaceURI() ne $xmlns) && next;
+    ($self->{xmlReader}->nodeType == XML_READER_TYPE_END_ELEMENT) && next;  # Don't process element end tags
+
+    my $localName = $self->{xmlReader}->localName();
+    if ($localName eq 'sheetData')
+    {
+      $self->{xmlReader}->read();  # Descend into <sheetData/>
       $self->{rowIndices}->{next} = 0;
       return 1;
     }
     elsif ($localName eq 'dimension')
     {
       my $node = $self->{xmlReader}->copyCurrentNode(0);
-      $self->{header}->{dimensions} = Spreadsheet::Nifty::XLSX::Decode->decodeDimension($node);
+      $self->{meta}->{dimensions} = Spreadsheet::Nifty::XLSX::Decode->decodeDimension($node);
+    }
+    elsif ($localName eq 'cols')
+    {
+      $self->{meta}->{columns} = $self->readColumnAttributes();
+    }
+  } while (($status = $self->{xmlReader}->nextSiblingElement()) == 1);
+
+  # Hit end of document without seeing <sheetData/>.
+  return !!0;
+}
+
+sub readEpilogueIfNeeded()
+{
+  my $self = shift();
+
+  ($self->{meta}->{epilogueRead}) && return !!1;  # Already read it
+
+  return $self->readEpilogue();
+}
+
+# Reads the epilogue information appearing after <sheetData/>.
+# We rewind the stream afterwards so that we are ready to read sheet data.
+sub readEpilogue()
+{
+  my $self = shift();
+
+  # Find the end tag of <sheetData/> if we are not already there
+  if (!Spreadsheet::Nifty::XMLReaderUtils->atEndOfElement($self->{xmlReader}, 'sheetData', $xmlns))
+  {
+    (!Spreadsheet::Nifty::XMLReaderUtils->ascendToElement($self->{xmlReader}, 'sheetData', $xmlns)) && die("readEpilogue(): Could not find end of <sheetData/>");
+  }
+
+  # Read the elements following <sheetData/>.
+  my $status;
+  while (($status = $self->{xmlReader}->nextSiblingElement()) == 1)
+  {
+    ($self->{xmlReader}->namespaceURI() ne $xmlns) && next;
+    ($self->{xmlReader}->nodeType == XML_READER_TYPE_END_ELEMENT) && next;  # Don't process element end tags
+
+    my $localName = $self->{xmlReader}->localName();
+    if ($localName eq 'autoFilter')
+    {
+      my $node = $self->{xmlReader}->copyCurrentNode(1);
+      my $autoFilter = Spreadsheet::Nifty::XLSX::Decode->decodeAutoFilter($node);
+      $self->{meta}->{autoFilter} = $autoFilter;
     }
     elsif ($localName eq 'sheetProtection')
     {
       my $node = $self->{xmlReader}->copyCurrentNode(1);
-      $self->{header}->{protection} = Spreadsheet::Nifty::XLSX::Decode->decodeWorksheetProtection($node);
+      $self->{meta}->{protection} = Spreadsheet::Nifty::XLSX::Decode->decodeWorksheetProtection($node);
     }
   }
 
-  # Hit end of document without seeing <sheetData/>.
-  return 0;
+  (!$self->rewind()) && die("readEpilogue(): rewind failed");
+  (!$self->findSheetDataStart()) && die("readEpilogue(): findSheetDataStart failed");
+
+  $self->{meta}->{epilogueRead} = !!1;
+  return !!1;
+}
+
+sub readColumnAttributes()
+{
+  my $self = shift();
+
+  if (($self->{xmlReader}->namespaceURI() ne $xmlns) || ($self->{xmlReader}->localName() ne 'cols'))
+  {
+    die("readColumnAttributes(): Expected to start reading at <cols/> element.");
+  }
+
+  my $colElements = [];
+  if (Spreadsheet::Nifty::XMLReaderUtils->findChildElement($self->{xmlReader}, 'col', $xmlns))
+  {
+    do
+    {
+      my $node = $self->{xmlReader}->copyCurrentNode(1);
+      push(@{$colElements}, Spreadsheet::Nifty::XLSX::Decode->decodeCol($node));
+    } while (Spreadsheet::Nifty::XMLReaderUtils->findSiblingElement($self->{xmlReader}, 'col', $xmlns));
+  }
+
+  # Repeated column definitions only get a single <col/> element, so we expand
+  #  them here. Note that all instances of the repeated column reference the
+  #  same shared data.
+  my $colAttrs = [];
+  for my $ce (@{$colElements})
+  {
+    for (my $i = $ce->{min}; $i <= $ce->{max}; $i++)
+    {
+      $colAttrs->[$i] = $ce;
+    }
+  }
+
+  return $colAttrs;
 }
 
 sub parseFormula($$$$)
@@ -160,17 +300,15 @@ sub findRow($)
   my $self = shift();
   my ($rowIndex) = @_;
 
-  my $xmlns = $Spreadsheet::Nifty::XLSX::namespaces->{main};
-
   ($self->{debug}) && printf("findRow(): rowIndex %d\n", $rowIndex);
 
   # Row index cannot be negative
   ($rowIndex < 0) && return undef;
 
-  # If header included dimensions, check upper bound
-  if (defined($self->{header}->{dimensions}))
+  # If prologue included dimensions, check upper bound
+  if (defined($self->{meta}->{dimensions}))
   {
-    ($rowIndex > $self->{header}->{dimensions}->{maxRow}) && return 0;
+    ($rowIndex > $self->{meta}->{dimensions}->{maxRow}) && return 0;
   }
 
   # If final row is known, check upper bound
@@ -239,8 +377,6 @@ sub readRow($)
 {
   my $self = shift();
   
-  my $xmlns = $Spreadsheet::Nifty::XLSX::namespaces->{main};
-
   if (($self->{xmlReader}->namespaceURI() ne $xmlns) || ($self->{xmlReader}->localName() ne 'row'))
   {
     die("readRow(): Expected to start reading at <row/> element.");
@@ -295,4 +431,19 @@ sub readRow($)
   return $cells;
 }
 
+sub getAutoFilterState()
+{
+  my $self = shift();
+
+  $self->readEpilogueIfNeeded();
+
+  (!defined($self->{meta}->{autoFilter})) && return undef;
+
+  my $autoFilter = {};
+  $autoFilter->{range} = { %{$self->{meta}->{autoFilter}->{ref}} };
+
+  return $autoFilter;
+}
+
 1;
+

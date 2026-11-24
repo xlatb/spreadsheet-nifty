@@ -2,8 +2,6 @@
 use warnings;
 use strict;
 
-use Scalar::Util qw();
-
 package Spreadsheet::Nifty::XLSX::Cell;
 use parent 'Spreadsheet::Nifty::Cell';
 
