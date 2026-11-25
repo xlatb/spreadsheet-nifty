@@ -154,4 +154,19 @@ sub getAutoFilter()
   return $autoFilter;
 }
 
+sub getDataValidations()
+{
+  my $self = shift();
+
+  return $self->{reader}->getDataValidations();
+}
+
+sub getDataValidationsForCell($$)
+{
+  my $self = shift();
+  my ($r, $c) = @_;
+
+  return $self->{reader}->getDataValidationsForCell($r, $c);
+}
+
 1;

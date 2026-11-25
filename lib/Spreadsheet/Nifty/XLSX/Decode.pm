@@ -8,6 +8,12 @@ use Spreadsheet::Nifty::Utils;
 
 use XML::LibXML qw(:libxml);
 
+use constant
+{
+  MAX_ROW_COUNT => 1048576,
+  MAX_COL_COUNT => 16384,
+};
+
 # Given a DOM element, returns the attributes as a hash reference.
 # If the DOM element is undefined, returns undef.
 sub attributesHash($)
@@ -45,15 +51,60 @@ sub decode2DRangeRefString($)
   return $ref;
 }
 
+# Given a same-sheet reference to cell(s), breaks it into fields.
+sub decodeRef()
+{
+  my $class = shift();
+  my ($str) = @_;
+
+  my $ref = {};
+
+  if ($str =~ m#^([A-Z]+)([0-9]+):([A-Z]+)([0-9]+)$#i)  # "A1:C50"
+  {
+    $ref->{minCol} = Spreadsheet::Nifty::Utils->stringToColIndex($1);
+    $ref->{minRow} = int($2) - 1;
+    $ref->{maxCol} = Spreadsheet::Nifty::Utils->stringToColIndex($3);
+    $ref->{maxRow} = int($4) - 1;
+    return $ref;
+  }
+  elsif ($str =~ m#^([A-Z]+)([0-9]+)$#i)  # "A1"
+  {
+    $ref->{minCol} = Spreadsheet::Nifty::Utils->stringToColIndex($1);
+    $ref->{minRow} = int($2) - 1;
+    $ref->{maxCol} = $ref->{minCol};
+    $ref->{maxRow} = $ref->{minRow};
+    return $ref;
+  }
+  elsif ($str =~ m#([A-Z]+):([A-Z]+)#i)  # "A:C"
+  {
+    $ref->{minCol} = Spreadsheet::Nifty::Utils->stringToColIndex($1);
+    $ref->{minRow} = 0;
+    $ref->{maxCol} = Spreadsheet::Nifty::Utils->stringToColIndex($2);
+    $ref->{maxRow} = MAX_ROW_COUNT - 1;
+  }
+  elsif ($str =~ m#^([0-9]+):([0-9]+)$#i)  # "1:3"
+  {
+    $ref->{minCol} = 0;
+    $ref->{minRow} = int($1) - 1;
+    $ref->{maxCol} = MAX_COL_COUNT - 1;
+    $ref->{maxRow} = int($2) - 1;
+  }
+  else
+  {
+    die("decodeRef(): Unhandled ref string '$str'");
+  }
+}
+
 # As above, but we can have multiple ranges separated by spaces. The
 #  result is always returned in an array.
-sub decodeMulti2DRangeRefString($)
+# This is called 'sqref' (sequence of references).
+sub decodeSqRef($)
 {
   my $class = shift();
   my ($str) = @_;
 
   my $parts = [ split(/ +/, $str) ];
-  return [ map({ $class->decode2DRangeRefString($_) } @{$parts}) ];
+  return [ map({ $class->decodeRef($_) } @{$parts}) ];
 }
 
 # Given an XML Schema boolean value string, returns the boolean value.
@@ -218,6 +269,93 @@ sub decodeCell($)
   }
 
   return $cell;
+}
+
+# <dataValidation type="list" allowBlank="1" showInputMessage="1" showErrorMessage="1" sqref="B2:B50">
+#   <formula1>"Yes,No,Maybe"</formula1>
+# </dataValidation>
+# The 'type' attribute is optional. It can be useful to omit it to still display the input message.
+sub decodeDataValidation($)
+{
+  my $class = shift();
+  my ($node) = @_;
+
+  my $dataValidation = {};
+  $dataValidation->{refs} = $class->decodeSqRef($node->getAttribute('sqref'));
+  $dataValidation->{type} = $node->getAttribute('type');
+  $dataValidation->{errorStyle} = $node->getAttribute('errorStyle') // 'stop';
+  $dataValidation->{operator} = $node->getAttribute('operator') // 'between';
+
+  # Grab boolean attributes
+  for my $f (qw(allowBlank showDropDown showInputMessage showErrorMessage))
+  {
+    $dataValidation->{$f} = int($node->getAttribute($f) // 0);
+  }
+
+  # Grab generic string attributes
+  for my $f (qw(errorTitle error promptTitle prompt))
+  {
+    $dataValidation->{$f} = $node->getAttribute($f);
+  }
+
+  # Grab formula children
+  for my $c (qw(formula1 formula2))
+  {
+    my ($kid) = $node->getChildrenByTagNameNS($node->namespaceURI(), $c);
+    (!defined($kid)) && next;
+    $dataValidation->{$c} = $kid->textContent();
+  }
+
+  return $dataValidation;
+}
+
+# <ext xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main" uri="{CCE6A557-97BC-4b89-ADB6-D9C93CAAB3DF}">
+#   <x14:dataValidations xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main" count="1">
+#     <x14:dataValidation type="list" allowBlank="1" showInputMessage="1" showErrorMessage="1">
+#       <x14:formula1>
+#         <xm:f>\'Data source\'!$A$1:$A$6</xm:f>
+#       </x14:formula1>
+#       <xm:sqref>B2</xm:sqref>
+#     </x14:dataValidation>
+#   </x14:dataValidations>
+# </ext>
+sub decodeDataValidationX14($)
+{
+  my $class = shift();
+  my ($node) = @_;
+
+  my $dataValidationX14 = {};
+  $dataValidationX14->{type} = $node->getAttribute('type');
+  $dataValidationX14->{errorStyle} = $node->getAttribute('errorStyle') // 'stop';
+  $dataValidationX14->{operator} = $node->getAttribute('operator') // 'between';
+
+  # Grab boolean attributes
+  for my $f (qw(allowBlank showDropDown showInputMessage showErrorMessage))
+  {
+    $dataValidationX14->{$f} = int($node->getAttribute($f) // 0);
+  }
+
+  # Grab generic string attributes
+  for my $f (qw(errorTitle error promptTitle prompt))
+  {
+    $dataValidationX14->{$f} = $node->getAttribute($f);
+  }
+
+  # Grab formula children
+  for my $c (qw(formula1 formula2))
+  {
+    my ($kid) = $node->getChildrenByTagNameNS($node->namespaceURI(), $c);
+    (!defined($kid)) && next;
+    my ($f) = $kid->getChildrenByTagNameNS($Spreadsheet::Nifty::XLSX::namespaces->{xm}, 'f');
+    (!defined($f)) && next;
+    $dataValidationX14->{$c} = $f->textContent();
+  }
+
+  # Grab sqref
+  my ($sqref) = $node->getChildrenByTagNameNS($Spreadsheet::Nifty::XLSX::namespaces->{xm}, 'sqref');
+  $dataValidationX14->{refs} = $class->decodeSqRef($sqref->textContent());
+
+  return $dataValidationX14;
 }
 
 # <autoFilter ref="A1:D100">...</autoFilter>

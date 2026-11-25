@@ -199,10 +199,39 @@ sub readEpilogue()
       my $autoFilter = Spreadsheet::Nifty::XLSX::Decode->decodeAutoFilter($node);
       $self->{meta}->{autoFilter} = $autoFilter;
     }
+    elsif ($localName eq 'dataValidations')
+    {
+      my $node = $self->{xmlReader}->copyCurrentNode(1);
+      $self->{meta}->{dataValidations} = [];
+      for my $dv ($node->getChildrenByTagNameNS($node->namespaceURI(), 'dataValidation'))
+      {
+        push(@{$self->{meta}->{dataValidations}}, Spreadsheet::Nifty::XLSX::Decode->decodeDataValidation($dv));
+      }
+    }
     elsif ($localName eq 'sheetProtection')
     {
       my $node = $self->{xmlReader}->copyCurrentNode(1);
       $self->{meta}->{protection} = Spreadsheet::Nifty::XLSX::Decode->decodeWorksheetProtection($node);
+    }
+    elsif ($localName eq 'extLst')
+    {
+      # Process each extension within extLst
+      if (Spreadsheet::Nifty::XMLReaderUtils->findChildElement($self->{xmlReader}, 'ext', $xmlns))
+      {
+        do
+        {
+          my $ext = $self->{xmlReader}->copyCurrentNode(1);
+          my $uri = uc($ext->getAttribute('uri'));
+          if ($uri eq $Spreadsheet::Nifty::XLSX::extensionIds->{'x14:dataValidations'})
+          {
+            my ($dataValidationsX14) = $ext->getChildrenByTagNameNS($Spreadsheet::Nifty::XLSX::namespaces->{x14}, 'dataValidations');
+            for my $dvX14 ($dataValidationsX14->getChildrenByTagNameNS($Spreadsheet::Nifty::XLSX::namespaces->{x14}, 'dataValidation'))
+            {
+              push(@{$self->{meta}->{dataValidations}}, Spreadsheet::Nifty::XLSX::Decode->decodeDataValidationX14($dvX14));
+            }
+          }
+        } while (Spreadsheet::Nifty::XMLReaderUtils->findSiblingElement($self->{xmlReader}, 'ext', $xmlns));
+      }
     }
   }
 
@@ -443,6 +472,44 @@ sub getAutoFilterState()
   $autoFilter->{range} = { %{$self->{meta}->{autoFilter}->{ref}} };
 
   return $autoFilter;
+}
+
+# Returns all data validations
+sub getDataValidations()
+{
+  my $self = shift();
+
+  $self->readEpilogueIfNeeded();
+
+  return $self->{meta}->{dataValidations};
+}
+
+# Returns data validations that cover the given cell
+sub getDataValidationsForCell($$)
+{
+  my $self = shift();
+  my ($r, $c) = @_;
+
+  $self->readEpilogueIfNeeded();
+
+  (!defined($self->{meta}->{dataValidations})) && return undef;
+
+  my $dataValidations = [];
+  for my $dv (@{$self->{meta}->{dataValidations}})
+  {
+    my $matched = !!0;
+    for my $ref (@{$dv->{refs}})
+    {
+      (($c < $ref->{minCol}) || ($c > $ref->{maxCol})) && next;
+      (($r < $ref->{minRow}) || ($r > $ref->{maxRow})) && next;
+      $matched = !!1;
+      last;
+    }
+    (!$matched) && next;
+    push(@{$dataValidations}, $dv);
+  }
+
+  return $dataValidations;
 }
 
 1;
